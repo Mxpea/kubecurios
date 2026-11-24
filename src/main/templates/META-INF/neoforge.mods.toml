@@ -20,6 +20,10 @@ version="${mod_version}" #mandatory
 # A display name for the mod
 displayName="${mod_name}" #mandatory
 
+# Logo displayed in the NeoForge mod list.
+logoFile="kubecurios-icon.png"
+logoBlur=true
+
 # The authors of the mod, displayed in the mod UI (optional)
 authors="Aurelith"
 
