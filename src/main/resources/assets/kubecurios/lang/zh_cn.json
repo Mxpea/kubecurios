@@ -1,0 +1,13 @@
+{
+  "kubecurios.tooltip.damage.incoming.increase": "受到的伤害提升%s",
+  "kubecurios.tooltip.damage.incoming.decrease": "受到的伤害减免%s",
+  "kubecurios.tooltip.damage.outgoing.increase": "造成的伤害提升%s",
+  "kubecurios.tooltip.damage.outgoing.decrease": "造成的伤害降低%s",
+  "kubecurios.tooltip.damage.typed.increase": "受到的%s伤害提升%s",
+  "kubecurios.tooltip.damage.typed.decrease": "受到的%s伤害减免%s",
+  "kubecurios.damage_tag.minecraft.is_fire": "火焰",
+  "kubecurios.damage_type.minecraft.in_fire": "接触火焰",
+  "kubecurios.damage_type.minecraft.on_fire": "燃烧",
+  "kubecurios.damage_type.minecraft.lava": "熔岩",
+  "kubecurios.damage_type.minecraft.hot_floor": "高温地面"
+}

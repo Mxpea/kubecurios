@@ -1,0 +1,13 @@
+{
+  "kubecurios.tooltip.damage.incoming.increase": "Damage taken increased by %s",
+  "kubecurios.tooltip.damage.incoming.decrease": "Damage taken reduced by %s",
+  "kubecurios.tooltip.damage.outgoing.increase": "Damage dealt increased by %s",
+  "kubecurios.tooltip.damage.outgoing.decrease": "Damage dealt reduced by %s",
+  "kubecurios.tooltip.damage.typed.increase": "%s damage taken increased by %s",
+  "kubecurios.tooltip.damage.typed.decrease": "%s damage taken reduced by %s",
+  "kubecurios.damage_tag.minecraft.is_fire": "Fire",
+  "kubecurios.damage_type.minecraft.in_fire": "Contact fire",
+  "kubecurios.damage_type.minecraft.on_fire": "Burning",
+  "kubecurios.damage_type.minecraft.lava": "Lava",
+  "kubecurios.damage_type.minecraft.hot_floor": "Hot floor"
+}

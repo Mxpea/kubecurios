@@ -1,0 +1,4 @@
+CuriosWhitelist.allow('kubecurios_smoke_ring', 'minecraft:amethyst_shard')
+CuriosWhitelist.allow('kubecurios_smoke_ring', 'kubecurios_smoke:missing_item')
+CuriosWhitelist.allow('kubecurios_missing_slot', 'minecraft:amethyst_shard')
+CuriosWhitelist.allow('kubecurios_unwired_slot', 'minecraft:amethyst_shard')
