@@ -225,6 +225,9 @@ ServerEvents.tick(event => {
       smoke.stage++
     } else if (smoke.stage === 8) {
       checkAttackerAndHiddenModifiers()
+      smokeCheck(smoke.stacks.insertItem(1, Item.of('kubecurios_smoke:zero_chance_ring'), false).isEmpty(), 'Zero chance ring was rejected')
+      hit(smoke.entity, smoke.incoming)
+      smokeCheck(!smoke.entity.entityTags().contains('kubecurios_zero_chance'), 'Command with 0% chance ran')
       stopSmoke(event.server, null)
     }
   } catch (err) {

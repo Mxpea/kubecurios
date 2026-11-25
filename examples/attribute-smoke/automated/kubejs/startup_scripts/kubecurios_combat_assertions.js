@@ -18,11 +18,15 @@ StartupEvents.registry('item', event => {
     .slot('kubecurios_smoke_ring')
     .incomingDamagePercent(10)
 
+  event.create('kubecurios_smoke:zero_chance_ring', 'kubecurios:curio')
+    .slot('kubecurios_smoke_ring')
+    .onHurtCommand('tag @s add kubecurios_zero_chance', 40, 0)
+
   var lore = new $SmokeLoreList()
   lore.add($SmokeComponent.literal('Manually added tooltip'))
   event.create('kubecurios_smoke:hidden_ring', 'kubecurios:curio')
     .slot('kubecurios_smoke_ring')
-    .onHurtCommand('execute if entity @s[distance=..0.01] run tag @s add kubecurios_attacker', 40, 'attacker')
+    .onHurtCommand('execute if entity @s[distance=..0.01] run tag @s add kubecurios_attacker', 40, 'attacker', 100)
     .outgoingDamagePercent(-20)
     .incomingDamagePercent(10)
     .armor(-1)

@@ -27,11 +27,17 @@ record CurioCombatEffects(Set<String> slots, @Nullable HurtTrigger hurtTrigger,
     private static final String HURT_COOLDOWNS = "kubecurios:resistance_cooldowns";
     private static final String TOOLTIP = "kubecurios.tooltip.damage.";
 
-    record HurtTrigger(int cooldownTicks, BiConsumer<LivingEntity, LivingEntity> action) {
+    record HurtTrigger(int cooldownTicks, double chancePercent, BiConsumer<LivingEntity, LivingEntity> action) {
         void tryRun(LivingEntity wearer, LivingEntity attacker, String itemId, long gameTime) {
+            if (chancePercent == 0) {
+                return;
+            }
             var data = wearer.getPersistentData();
             var deadlines = data.getCompoundOrEmpty(HURT_COOLDOWNS);
             if (gameTime < deadlines.getLongOr(itemId, Long.MIN_VALUE)) {
+                return;
+            }
+            if (chancePercent < 100 && wearer.getRandom().nextDouble() * 100 >= chancePercent) {
                 return;
             }
             deadlines.putLong(itemId, gameTime + cooldownTicks);

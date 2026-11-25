@@ -24,7 +24,7 @@ StartupEvents.registry('item', event => {
 |---|---|
 | `.slot(slotId)` | 将当前饰品加入指定槽位的白名单。至少声明一个槽位，可以链式声明多个。槽位 ID 使用 `ring` 这样的字符串。 |
 | `.attribute(attributeId, amount, operation)` | 为已声明的槽位添加一项装备属性，可以多次调用。 |
-| `.onHurtCommand(command, cooldownTicks[, executor])` | 受攻击并损失生命后运行一条命令，默认以佩戴者为执行者。 |
+| `.onHurtCommand(command, cooldownTicks[, executor][, chancePercent])` | 受攻击并损失生命后按概率执行一条命令。默认执行者为佩戴者，概率为 100%。 |
 | `.incomingDamagePercent(percent)` | 调整受到的伤害。`-10` 表示减免 10%。 |
 | `.outgoingDamagePercent(percent)` | 调整归属于佩戴者的伤害。`15` 表示提高 15%。 |
 | `.incomingDamageTypePercent(typeOrTag, percent)` | 只调整匹配指定伤害类型或标签的受伤数值。 |
@@ -81,6 +81,7 @@ StartupEvents.registry('item', event => {
 
 - `onHurtCommand` 在佩戴者被其他生物攻击、实际掉血且仍存活时触发。无攻击者的环境伤害、完全挡下的攻击和只消耗吸收生命的攻击不会触发。用它给予抗性时，抗性从这次伤害结算后开始生效。
 - 每件饰品配置一条命令，可以省略开头的 `/`。第三参数填 `self` 或 `attacker`，默认 `self`。命令在所选实体的维度、位置和朝向执行，`@s` 是该实体。有明确射手的箭矢使用射手作为攻击者。
+- 概率使用 `0` 到 `100` 的百分数，支持小数。可直接写 `.onHurtCommand(command, 200, 25)`，以佩戴者身份按 25% 概率触发。指定执行者时，概率放在第四个参数，例如 `.onHurtCommand(command, 200, 'attacker', 25)`。省略概率时默认 100%，`0` 会禁用触发。冷却就绪的每次有效受伤都会判定，判定成功才开始冷却。
 - 命令按命令方块权限执行。正整数冷却以服务端 tick 计时，`200` 在 20 TPS 下是 10 秒。同一佩戴者的同款饰品共享冷却，取下重戴不会刷新。
 
 例如，让攻击者获得 2 秒缓慢：

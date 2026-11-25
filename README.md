@@ -28,7 +28,7 @@ StartupEvents.registry('item', event => {
 
 ## 为饰品添加战斗效果
 
-在 `kubecurios:curio` Builder 上配置命令和带正负号的数值。命令默认以佩戴者身份在原地执行，第三参数可选 `'attacker'`。
+在 `kubecurios:curio` Builder 上配置命令和带正负号的数值。命令默认以佩戴者身份在原地执行，第三参数可选 `'attacker'`。概率默认 100%，例如 `.onHurtCommand(command, 200, 'attacker', 25)` 会以攻击者身份按 25% 概率触发。
 
 ```js
 StartupEvents.registry('item', event => {

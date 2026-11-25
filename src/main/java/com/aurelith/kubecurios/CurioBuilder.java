@@ -75,15 +75,26 @@ public final class CurioBuilder extends ItemBuilder {
     }
 
     public CurioBuilder onHurtCommand(String command, int cooldownTicks, String executor) {
+        return onHurtCommand(command, cooldownTicks, executor, 100);
+    }
+
+    public CurioBuilder onHurtCommand(String command, int cooldownTicks, double chancePercent) {
+        return onHurtCommand(command, cooldownTicks, "self", chancePercent);
+    }
+
+    public CurioBuilder onHurtCommand(String command, int cooldownTicks, String executor, double chancePercent) {
         String line = command.strip();
         if (command.contains("\n") || command.contains("\r") || line.isEmpty() || line.equals("/")) {
             throw new IllegalArgumentException("Expected one nonempty Curio command for " + id);
         }
         requireCooldown(cooldownTicks);
+        if (!Double.isFinite(chancePercent) || chancePercent < 0 || chancePercent > 100) {
+            throw new IllegalArgumentException("Curio command chance must be between 0 and 100 for " + id);
+        }
         hurtTrigger = switch (executor) {
-            case "self" -> new CurioCombatEffects.HurtTrigger(cooldownTicks,
+            case "self" -> new CurioCombatEffects.HurtTrigger(cooldownTicks, chancePercent,
                     (wearer, attacker) -> CurioCombatEffects.runCommand(wearer, line));
-            case "attacker" -> new CurioCombatEffects.HurtTrigger(cooldownTicks,
+            case "attacker" -> new CurioCombatEffects.HurtTrigger(cooldownTicks, chancePercent,
                     (wearer, attacker) -> CurioCombatEffects.runCommand(attacker, line));
             default -> throw new IllegalArgumentException("Curio command executor must be 'self' or 'attacker' for " + id);
         };
@@ -97,7 +108,7 @@ public final class CurioBuilder extends ItemBuilder {
             throw new IllegalArgumentException("Curio resistance duration must be positive for " + id);
         }
         requireCooldown(cooldownTicks);
-        hurtTrigger = new CurioCombatEffects.HurtTrigger(cooldownTicks,
+        hurtTrigger = new CurioCombatEffects.HurtTrigger(cooldownTicks, 100,
                 (wearer, attacker) -> wearer.addEffect(new MobEffectInstance(MobEffects.RESISTANCE, durationTicks)));
         return this;
     }
