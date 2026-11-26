@@ -1,0 +1,7 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.aurelith.kubecurios.mixin",
+  "client": ["HumanoidArmorLayerMixin"],
+  "injectors": { "defaultRequire": 1 }
+}

@@ -1,9 +1,10 @@
 # KubeCurios Wiki
 
-KubeCurios 为 Minecraft 26.1.2 的 KubeJS 脚本提供 Curios 饰品支持。你可以注册新饰品、允许已有物品装备到指定槽位，以及为新饰品配置属性、内置战斗效果和穿脱回调。
+KubeCurios 为 Minecraft 26.1.2 的 KubeJS 脚本提供 Curios 饰品支持。你可以注册新饰品、让已有物品进入槽位，并配置属性、战斗效果、耐久消耗、累计佩戴时间和随身外观。
 
 - [槽位数据包与白名单](Slot-Data-and-Whitelist.md)
 - [脚本接口与属性运算](Scripting-API.md)
+- [饰品佩戴外观](Wearable-Appearance.md)
 - [排错、测试与重连兼容](Diagnostics-and-Verification.md)
 
 ## 安装

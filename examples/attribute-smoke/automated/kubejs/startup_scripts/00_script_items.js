@@ -1,0 +1,23 @@
+StartupEvents.registry('item', event => {
+  for (const name of ['blood_a', 'blood_b']) {
+    event.create(`kubecurios_smoke:${name}`, 'kubecurios:curio')
+      .slot('kubecurios_smoke_ring').armor(1).script('kubecurios_smoke:blood').script('kubecurios_smoke:blood')
+  }
+  event.create('kubecurios_smoke:script_only', 'kubecurios:curio')
+    .slot('kubecurios_smoke_ring').script('kubecurios_smoke:observer')
+  event.create('kubecurios_smoke:missing_script', 'kubecurios:curio')
+    .slot('kubecurios_smoke_ring').script('kubecurios_smoke:undefined')
+  event.create('kubecurios_smoke:charged_ring', 'kubecurios:curio')
+    .slot('kubecurios_smoke_ring').slot('kubecurios_probe_extra').maxDamage(128).script('kubecurios_smoke:charged')
+  event.create('kubecurios_smoke:undamageable_ring', 'kubecurios:curio')
+    .slot('kubecurios_smoke_ring').script('kubecurios_smoke:charged')
+  const ring = event.create('kubecurios_smoke:legacy_failure', 'kubecurios:curio')
+    .slot('kubecurios_smoke_ring')
+    .onHurtCommand('execute if entity @s[tag=kc_allow_legacy] run tag @s add kc_legacy_ran', 40)
+  try {
+    ring.script('kubecurios_smoke:observer').script('kubecurios_smoke:blood')
+    throw new Error('Second script binding was accepted')
+  } catch (error) {
+    if (!String(error).includes('already binds script')) throw error
+  }
+})

@@ -2,10 +2,8 @@ package com.aurelith.kubecurios;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.BiConsumer;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.registries.Registries;
@@ -19,9 +17,8 @@ import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.LivingEntity;
 import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
 import org.jetbrains.annotations.Nullable;
-import top.theillusivec4.curios.api.CuriosCapability;
 
-record CurioCombatEffects(Set<String> slots, @Nullable HurtTrigger hurtTrigger,
+record CurioCombatEffects(@Nullable HurtTrigger hurtTrigger,
                           double incomingPercent, double outgoingPercent, Map<DamageFilter, Double> damageByType) {
     // Keep cooldowns written by scripts using resistanceOnHurt.
     private static final String HURT_COOLDOWNS = "kubecurios:resistance_cooldowns";
@@ -77,22 +74,35 @@ record CurioCombatEffects(Set<String> slots, @Nullable HurtTrigger hurtTrigger,
             return;
         }
         var source = event.getSource();
+        var attacker = source.getEntity() instanceof LivingEntity living ? living : null;
+        var damage = new CurioScriptRuntime.Damage(attacker, victim, source, event.getNewDamage());
+        var outgoing = attacker != null && attacker != victim ? CurioEquipment.snapshot(attacker)
+                : Map.<String, CurioEquipment.Equipped>of();
+        var incoming = CurioEquipment.snapshot(victim);
         double multiplier = 1.0;
-        if (source.getEntity() instanceof LivingEntity attacker && attacker != victim) {
-            for (var effects : equippedByItem(attacker).values()) {
+        for (var item : outgoing.values()) {
+            var effects = item.combatEffects();
+            if (effects != null) {
                 multiplier = multiply(multiplier, factor(effects.outgoingPercent));
             }
         }
-        for (var effects : equippedByItem(victim).values()) {
-            multiplier = multiply(multiplier, factor(effects.incomingPercent));
-            for (var rule : effects.damageByType.entrySet()) {
-                if (rule.getKey().matches(source)) {
-                    multiplier = multiply(multiplier, factor(rule.getValue()));
+        for (var item : incoming.values()) {
+            var effects = item.combatEffects();
+            if (effects != null) {
+                multiplier = multiply(multiplier, factor(effects.incomingPercent));
+                for (var rule : effects.damageByType.entrySet()) {
+                    if (rule.getKey().matches(source)) {
+                        multiplier = multiply(multiplier, factor(rule.getValue()));
+                    }
                 }
             }
         }
+        if (attacker != null && attacker != victim) {
+            multiplier = CurioScriptRuntime.multiplyDamage(multiplier, CurioScripts.Hook.OUTGOING, attacker, damage, outgoing);
+        }
+        multiplier = CurioScriptRuntime.multiplyDamage(multiplier, CurioScripts.Hook.INCOMING, victim, damage, incoming);
         if (multiplier != 1.0) {
-            event.setNewDamage((float) Math.min(Float.MAX_VALUE, event.getNewDamage() * multiplier));
+            event.setNewDamage((float) Math.min(Float.MAX_VALUE, damage.amount() * multiplier));
         }
     }
 
@@ -100,22 +110,30 @@ record CurioCombatEffects(Set<String> slots, @Nullable HurtTrigger hurtTrigger,
         return 1.0 + percent / 100.0;
     }
 
-    private static double multiply(double left, double right) {
+    static double multiply(double left, double right) {
         return left == 0 || right == 0 ? 0 : left * right;
     }
 
     static void onHurt(LivingDamageEvent.Post event) {
         var wearer = event.getEntity();
-        if (event.getHealthDamage() <= 0 || !wearer.isAlive() || !(wearer.level() instanceof ServerLevel level)
+        if (!(event.getHealthDamage() > 0) || !(wearer.level() instanceof ServerLevel level)
                 || !(event.getSource().getEntity() instanceof LivingEntity attacker) || attacker == wearer) {
             return;
         }
-        long gameTime = level.getServer().overworld().getGameTime();
-        equippedByItem(wearer).forEach((itemId, effects) -> {
-            if (effects.hurtTrigger != null) {
-                effects.hurtTrigger.tryRun(wearer, attacker, itemId, gameTime);
+        var damage = new CurioScriptRuntime.Damage(attacker, wearer, event.getSource(), event.getHealthDamage());
+        if (wearer.isAlive()) {
+            long gameTime = level.getServer().overworld().getGameTime();
+            CurioEquipment.snapshot(wearer).forEach((itemId, item) -> {
+                var effects = item.combatEffects();
+                if (effects != null && effects.hurtTrigger != null) {
+                    effects.hurtTrigger.tryRun(wearer, attacker, itemId, gameTime);
+                }
+            });
+            if (wearer.isAlive()) {
+                CurioScriptRuntime.notifyDamage(CurioScripts.Hook.HURT, wearer, damage, CurioEquipment.snapshot(wearer));
             }
-        });
+        }
+        CurioScriptRuntime.notifyDamage(CurioScripts.Hook.HIT, attacker, damage, CurioEquipment.snapshot(attacker));
     }
 
     List<Component> tooltips() {
@@ -137,31 +155,5 @@ record CurioCombatEffects(Set<String> slots, @Nullable HurtTrigger hurtTrigger,
         arguments[prefix.length] = BigDecimal.valueOf(Math.abs(percent)).stripTrailingZeros().toPlainString() + "%";
         return Component.translatable(TOOLTIP + category + (percent > 0 ? ".increase" : ".decrease"), arguments)
                 .withStyle(penalty ? ChatFormatting.RED : ChatFormatting.BLUE);
-    }
-
-    private static Map<String, CurioCombatEffects> equippedByItem(LivingEntity wearer) {
-        var inventory = wearer.getCapability(CuriosCapability.INVENTORY);
-        if (inventory == null) {
-            return Map.of();
-        }
-        Map<String, CurioCombatEffects> equipped = new LinkedHashMap<>();
-        for (var entry : inventory.getCurios().entrySet()) {
-            String slot = entry.getKey();
-            var stacks = entry.getValue().getStacks();
-            for (int index = 0; index < stacks.getSlots(); index++) {
-                var stack = stacks.getStackInSlot(index);
-                if (stack.getItem() instanceof CurioBuilder.ScriptedCurioItem item
-                        && inventory.isSlotActive(slot, index)) {
-                    var effects = item.combatEffects();
-                    if (effects != null && effects.slots.contains(slot)) {
-                        var itemId = MyCuriosUtils.itemId(stack);
-                        if (itemId != null) {
-                            equipped.putIfAbsent(itemId, effects);
-                        }
-                    }
-                }
-            }
-        }
-        return equipped;
     }
 }

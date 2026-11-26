@@ -30,8 +30,13 @@ StartupEvents.registry('item', event => {
 | `.incomingDamageTypePercent(typeOrTag, percent)` | 只调整匹配指定伤害类型或标签的受伤数值。 |
 | `.armor(amount)` / `.armorToughness(amount)` | 按点数增减护甲或护甲韧性。 |
 | `.hideAttribute()` | 隐藏自动生成的战斗和 Curios 属性提示。手写提示仍显示。 |
+| `.script(id)` | 为饰品绑定一个在启动脚本顶层注册的命名效果。 |
 | `.onEquip(callback)` | 注册服务端功能槽的装备回调。 |
 | `.onUnequip(callback)` | 注册服务端功能槽的卸下回调。 |
+| `.armorAppearance(part, equipmentAssetId)` | 用原版盔甲层显示饰品外观。部位可选 `head`、`chest`、`legs`、`feet`。 |
+| `.itemAppearance(anchor, x, y, z, scale)` | 让 Curios 渲染层将物品模型挂在佩戴者的人形骨骼上。 |
+
+外观和装备属性互相独立。原版材质、自定义贴图、挂点和显示规则见[饰品佩戴外观](Wearable-Appearance.md)。
 
 ## 属性 ID 和运算方式
 
@@ -107,6 +112,71 @@ StartupEvents.registry('item', event => {
 ### 自动工具提示
 
 受伤减免和输出提升显示为蓝色，受伤提升和输出降低显示为红色。例如 `.incomingDamagePercent(10)` 显示红色的「受到的伤害提升10%」，`-10` 显示蓝色的「受到的伤害减免10%」。护甲和韧性通过 Curios 的常规属性提示显示。调用 `.hideAttribute()` 会隐藏这些自动属性行，手写的 `.tooltip(...)`、物品描述和实际效果都保留。命令效果的说明可以通过手写提示提供。
+
+## 命名脚本效果
+
+在 `kubejs/startup_scripts/` 的文件顶层注册效果，物品 Builder 用 `.script(id)` 引用它。ID 使用完整的 `namespace:path`。定义与物品注册可以分开写，启动文件排序不影响绑定。每种物品可绑定一个效果，不同物品可以共用同一份定义。重启后应用脚本改动。
+
+```js
+const halfHealthBonus = 1.2
+
+CurioScripts.define('mypack:blood_oath', {
+  modifyOutgoingDamage(ctx) {
+    const wearer = ctx.entity()
+    if (wearer.getHealth() >= wearer.getMaxHealth() / 2) {
+      return CurioEffects.multiplyDamage(halfHealthBonus)
+    }
+  },
+  equipmentModifiers(ctx) {
+    const wearer = ctx.entity()
+    if (wearer.getHealth() < wearer.getMaxHealth() / 2 &&
+        ctx.commandSucceeds('execute unless entity @s[tag=exhausted]')) {
+      return CurioEffects.armor(4)
+    }
+  }
+})
+
+StartupEvents.registry('item', event => {
+  event.create('blood_ring', 'kubecurios:curio')
+    .slot('kubecurios_smoke_ring')
+    .script('mypack:blood_oath')
+})
+```
+
+各回调均可选，在服务端对启用的功能格执行。一次事件或刷新中，同款物品只调用一次。
+
+| 回调 | 时机与返回值 |
+|---|---|
+| `modifyOutgoingDamage` | 伤害结算前查询归属攻击者的饰品。返回 `CurioEffects.multiplyDamage(factor)` 或空值。 |
+| `modifyIncomingDamage` | 伤害结算前查询受害者的饰品。支持环境伤害，返回值与输出回调相同。 |
+| `onHurt` | 佩戴者被另一生物攻击、损失生命且存活后调用。 |
+| `onHit` | 归属于佩戴者的攻击使其他生物损失生命后调用，包括有明确射手的投射物及致命命中。 |
+| `equipmentModifiers` | 每 5 个实体 tick 刷新。返回 `CurioEffects.armor(amount)`、`CurioEffects.attribute(id, amount, operation)`、声明数组或空值。空值清除该脚本的临时属性。 |
+| `onTick` | 每 20 个实体 tick 调用，可用于定期效果。 |
+
+`ctx.entity()` 和 `ctx.itemId()` 分别返回佩戴者和完整物品 ID。战斗回调还可以调用 `ctx.attacker()`、`ctx.target()`、`ctx.damageSource()` 和 `ctx.damage()`。无生物归属时 `ctx.attacker()` 为 `null`。结算前回调读取同一次事件进入该阶段时的伤害，结算后回调读取实际生命伤害。脚本倍率在内置倍率之后相乘。
+
+`ctx.commandSucceeds(command)` 以佩戴者的身份和位置静默提交一条命令，只能在当前回调内调用。命令即时执行时按成功状态返回，显式 `return 0` 也可以成功。解析失败、被拒绝或即时失败会返回 `false`。如果命令已入队，方法立即返回 `true`，后续结果按原版队列处理。读取刚排队命令的副作用需要等外层命令执行完毕。
+
+临时属性使用稳定的修饰符 ID。切换条件、卸下饰品或停用槽位后，最迟在下一次 5-tick 刷新移除对应贡献。回调异常会按物品和回调限频记录，失效的 `equipmentModifiers` 会清理它此前添加的属性。动态属性的说明可以写进手工工具提示。
+
+### 命令整数与装备状态
+
+需要命令数值时用 `ctx.commandResult(command)`。它和 `commandSucceeds` 共用执行流程，每次调用只提交一次。成功的即时整数原样保留，包括 `0` 和负数；执行失败、仍在队列中或多个成功结果不同都返回 `null`。用 `value !== null` 检查是否取得数值。
+
+| 接口 | 行为 |
+|---|---|
+| `ctx.countOtherEquipped('#mypack:blood_set')` | 数出匹配标签的启用功能格，排除本次回调的来源格。同款另一件和其他模组饰品也可计入。 |
+| `ctx.equippedTicks()` | 当前佩戴者对该物品 ID 的累计佩戴 tick。同款多件每 tick 只计一次；最后一件卸下、停用或破碎后暂停，再戴同款续算。累计值随存档保留，离线时间不计入。 |
+| `ctx.remainingDurability()` / `ctx.maxDurability()` | 读取来源物品栈的剩余耐久和上限。无耐久时返回 `null`。 |
+| `ctx.remainingDurabilityPercent()` | 返回 `0–100` 的数值，可含小数；无耐久时返回 `null`。 |
+| `ctx.enchantmentLevel('minecraft:unbreaking')` | 读取来源栈中实际写入的已注册附魔等级，未附上时为 `0`。 |
+
+同款饰品选用槽位 ID 和格索引最靠前的启用功能格作为来源。玩家统计直接使用 KubeJS，例如 `ctx.entity().stats.getJumps()` 或 `ctx.entity().stats.getItemsPickedUp('minecraft:amethyst_shard')`，调用前确认佩戴者是服务端玩家。
+
+`.maxDamage(128)` 可让饰品拥有耐久。`onTick`、`onHit` 和 `onHurt` 可以返回 `CurioEffects.damageDurability(1)`，在回调结束后请求原版耐久结算。消耗只作用于仍在来源格、且仍启用的原物品栈；附魔减耗和破碎按原版规则处理。附魔允许列表、附魔台和铁砧的适配不在这一轮。
+
+**有耐久不等于自动扣耐久。** 要每 20 个实体 tick 请求扣 1 点，在 `onTick` 返回 `CurioEffects.damageDurability(1)`；想在造成实际生命伤害时扣损，就在 `onHit` 返回。只读 `ctx.equippedTicks()` 或 `ctx.remainingDurability()` 不会扣损。创造模式按原版规则免扣耐久。
 
 ## 白名单与查询
 

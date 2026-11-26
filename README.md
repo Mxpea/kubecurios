@@ -2,6 +2,8 @@
 
 [项目 Wiki](docs/wiki/Home.md) · 安装、槽位配置、脚本接口和排错。
 
+[开发设计](docs/architecture.md) · 架构与脚本效果实现规格。
+
 为 Minecraft 26.1.2 的 KubeJS 启动脚本提供 Curios 饰品物品类型，不依赖 `ServerEvents.tags`。
 
 ## 在脚本中注册饰品
@@ -44,6 +46,12 @@ StartupEvents.registry('item', event => {
 ```
 
 同款饰品共享触发冷却，伤害倍率按物品 ID 去重。`.hideAttribute()` 隐藏自动生成的属性提示，保留手写提示。详见[内置战斗效果](docs/wiki/Scripting-API.md#内置战斗效果)。
+
+`.script(id)` 支持通过 `CurioScripts.define(...)` 注册条件伤害、定期回调与临时属性。使用示例见[命名脚本效果](docs/wiki/Scripting-API.md#命名脚本效果)。
+
+## 饰品外观
+
+`.armorAppearance('head', 'minecraft:gold')` 用原版盔甲层显示金头盔，不占用原版头盔格。`.itemAppearance('body', 0, 5, -3.5, 0.4)` 则用 Curios 原生渲染接口把物品模型挂在躯干上。使用说明与自定义资源示例见[饰品佩戴外观](docs/wiki/Wearable-Appearance.md)。
 
 ## 允许已有物品进入槽位
 

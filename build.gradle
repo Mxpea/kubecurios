@@ -160,6 +160,10 @@ tasks.named('runAttributeSmoke').configure {
         def log = smokeDirectory.get().file('logs/latest.log').asFile
         def text = log.isFile() ? log.getText('UTF-8') : ''
         def expectedLogLines = [
+                '[KubeCurios equipment] PASS: source slots, tags, cumulative equipped time and save/load, durability and enchantment',
+                '[KubeCurios script] PASS: invalid definitions rejected',
+                '[KubeCurios script] PASS: combat, equipment, command results and nested execution',
+                "Curio 'kubecurios_smoke:missing_script' references undefined script 'kubecurios_smoke:undefined'",
                 '[KubeCurios smoke] PASS: whitelist, existing item, helper, max health 20 -> 24 -> 28 -> 24 -> 20, command cooldown, signed damage, armor and tooltip visibility',
                 "Curios whitelist item 'kubecurios_smoke:missing_item' is not registered for slot 'kubecurios_smoke_ring'",
                 "Curios slot 'kubecurios_missing_slot' is not defined",

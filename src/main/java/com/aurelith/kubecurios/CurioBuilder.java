@@ -2,6 +2,7 @@ package com.aurelith.kubecurios;
 
 import dev.latvian.mods.kubejs.item.ItemBuilder;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -11,8 +12,10 @@ import java.util.function.Consumer;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.item.Item;
@@ -28,6 +31,8 @@ import top.theillusivec4.curios.api.type.capability.ICurioItem;
 public final class CurioBuilder extends ItemBuilder {
     private final Set<String> slots = new LinkedHashSet<>();
     private final List<AttributeSpec> attributes = new ArrayList<>();
+    private final Map<EquipmentSlot, CurioArmorAppearance> armorAppearances = new EnumMap<>(EquipmentSlot.class);
+    private @Nullable CurioItemAppearance itemAppearance;
     private Consumer<EquipContext> equipCallback;
     private Consumer<EquipContext> unequipCallback;
     private @Nullable CurioCombatEffects.HurtTrigger hurtTrigger;
@@ -35,6 +40,7 @@ public final class CurioBuilder extends ItemBuilder {
     private double outgoingDamagePercent;
     private final Map<CurioCombatEffects.DamageFilter, Double> damageByType = new LinkedHashMap<>();
     private boolean hideAttributes;
+    private @Nullable Identifier scriptId;
 
     public CurioBuilder(Identifier id) {
         super(id);
@@ -50,13 +56,28 @@ public final class CurioBuilder extends ItemBuilder {
         if (!Double.isFinite(amount)) {
             throw new IllegalArgumentException("Non-finite Curio attribute amount for " + id);
         }
-        var op = switch (operation) {
-            case "addition", "add_value" -> AttributeModifier.Operation.ADD_VALUE;
-            case "add_multiplied_base" -> AttributeModifier.Operation.ADD_MULTIPLIED_BASE;
-            case "add_multiplied_total" -> AttributeModifier.Operation.ADD_MULTIPLIED_TOTAL;
-            default -> throw new IllegalArgumentException("Unknown Curio attribute operation: " + operation);
-        };
+        var op = CurioEffects.parseOperation(operation);
         attributes.add(new AttributeSpec(Identifier.parse(attribute), amount, op));
+        return this;
+    }
+
+    public CurioBuilder script(String id) {
+        var parsed = CurioScripts.parseId(id);
+        if (scriptId != null && !scriptId.equals(parsed)) {
+            throw new IllegalArgumentException("Curio " + this.id + " already binds script " + scriptId);
+        }
+        scriptId = parsed;
+        return this;
+    }
+
+    public CurioBuilder armorAppearance(String part, String equipmentAsset) {
+        var appearance = CurioArmorAppearance.parse(part, equipmentAsset);
+        armorAppearances.put(appearance.slot(), appearance);
+        return this;
+    }
+
+    public CurioBuilder itemAppearance(String anchor, double x, double y, double z, double scale) {
+        itemAppearance = CurioItemAppearance.parse(anchor, x, y, z, scale);
         return this;
     }
 
@@ -185,10 +206,15 @@ public final class CurioBuilder extends ItemBuilder {
             properties.component(CuriosDataComponents.ATTRIBUTE_MODIFIERS, modifiers.build().withTooltip(!hideAttributes));
         }
         var combatEffects = hurtTrigger == null && incomingDamagePercent == 0 && outgoingDamagePercent == 0 && damageByType.isEmpty()
-                ? null : new CurioCombatEffects(Set.copyOf(slots), hurtTrigger, incomingDamagePercent,
+                ? null : new CurioCombatEffects(hurtTrigger, incomingDamagePercent,
                         outgoingDamagePercent, new LinkedHashMap<>(damageByType));
         var combatTooltips = hideAttributes || combatEffects == null ? List.<Component>of() : combatEffects.tooltips();
-        Item item = new ScriptedCurioItem(properties, equipCallback, unequipCallback, combatEffects, combatTooltips, hideAttributes);
+        var script = scriptId == null ? null : CurioScripts.get(scriptId);
+        if (scriptId != null && script == null) {
+            KubeCurios.LOGGER.error("Curio '{}' references undefined script '{}'", id, scriptId);
+        }
+        Item item = new ScriptedCurioItem(properties, equipCallback, unequipCallback, combatEffects, combatTooltips,
+                hideAttributes, Set.copyOf(slots), script, Map.copyOf(armorAppearances), itemAppearance);
         slots.forEach(slot -> CurioSlotWhitelist.allow(slot, id));
         return item;
     }
@@ -204,16 +230,26 @@ public final class CurioBuilder extends ItemBuilder {
         private final @Nullable CurioCombatEffects combatEffects;
         private final List<Component> combatTooltips;
         private final boolean hideAttributes;
+        private final Set<String> slots;
+        private final @Nullable CurioScripts.Definition script;
+        private final Map<EquipmentSlot, CurioArmorAppearance> armorAppearances;
+        private final @Nullable CurioItemAppearance itemAppearance;
 
         private ScriptedCurioItem(Properties properties, Consumer<EquipContext> equipCallback,
                                   Consumer<EquipContext> unequipCallback, @Nullable CurioCombatEffects combatEffects,
-                                  List<Component> combatTooltips, boolean hideAttributes) {
+                                  List<Component> combatTooltips, boolean hideAttributes, Set<String> slots,
+                                  @Nullable CurioScripts.Definition script, Map<EquipmentSlot, CurioArmorAppearance> armorAppearances,
+                                  @Nullable CurioItemAppearance itemAppearance) {
             super(properties);
             this.equipCallback = equipCallback;
             this.unequipCallback = unequipCallback;
             this.combatEffects = combatEffects;
             this.combatTooltips = combatTooltips;
             this.hideAttributes = hideAttributes;
+            this.slots = slots;
+            this.script = script;
+            this.armorAppearances = armorAppearances;
+            this.itemAppearance = itemAppearance;
         }
 
         @Override
@@ -229,8 +265,36 @@ public final class CurioBuilder extends ItemBuilder {
             return hideAttributes ? List.of() : ICurioItem.super.getAttributesTooltip(tooltips, context, stack);
         }
 
+        boolean appliesTo(String slot) {
+            return slots.contains(slot);
+        }
+
+        @Nullable CurioScripts.Definition script() {
+            return script;
+        }
+
         @Nullable CurioCombatEffects combatEffects() {
             return combatEffects;
+        }
+
+        Map<EquipmentSlot, CurioArmorAppearance> armorAppearances() {
+            return armorAppearances;
+        }
+
+        @Nullable CurioItemAppearance itemAppearance() {
+            return itemAppearance;
+        }
+
+        @Override
+        public void curioTick(SlotContext context, ItemStack stack) {
+            var wearer = context.entity();
+            if (script != null && !context.cosmetic() && appliesTo(context.identifier()) && wearer != null
+                    && wearer.isAlive() && !stack.isEmpty() && wearer.level() instanceof ServerLevel level) {
+                String item = MyCuriosUtils.itemId(stack);
+                if (item != null) {
+                    CurioWearTime.tick(wearer, item, level.getServer().getTickCount());
+                }
+            }
         }
 
         @Override

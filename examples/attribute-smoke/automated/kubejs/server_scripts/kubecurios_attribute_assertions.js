@@ -12,6 +12,7 @@ const $TooltipFlag = Java.loadClass('net.minecraft.world.item.TooltipFlag')
 const $TranslatableContents = Java.loadClass('net.minecraft.network.chat.contents.TranslatableContents')
 const $ArrayList = Java.loadClass('java.util.ArrayList')
 const $Component = Java.loadClass('net.minecraft.network.chat.Component')
+const $SmokeItemComponents = Java.loadClass('net.minecraft.core.component.DataComponents')
 const smokeSlot = 'kubecurios_smoke_ring'
 const smokeItem = 'kubecurios_smoke:ward_ring'
 let smoke = null
@@ -23,6 +24,8 @@ function smokeCheck(condition, message) {
 function stopSmoke(server, error) {
   if (smoke && smoke.entity) smoke.entity.discard()
   if (smoke && smoke.target) smoke.target.discard()
+  if (smoke && smoke.scriptVictim) smoke.scriptVictim.discard()
+  if (smoke && smoke.restoredWearer) smoke.restoredWearer.discard()
   if (smoke) smoke.level.setChunkForced(0, 0, false)
   smoke = null
   if (error) console.error(`[KubeCurios smoke] FAIL: ${error}`)
@@ -37,6 +40,7 @@ ServerEvents.loaded(event => {
     smoke = { level: probeWorld, entity: entity, time: 0, stage: 0 }
     smokeCheck($CuriosSlotTypes.getDefaultPlayerSlotTypes(false).containsKey(smokeSlot), 'Player has no smoke slot')
     var ring = Item.of(smokeItem)
+    smokeCheck(!ring.has($SmokeItemComponents.EQUIPPABLE), 'Armor appearance must not add a real vanilla armor slot')
     var stone = Item.of('minecraft:stone')
     var shard = Item.of('minecraft:amethyst_shard')
     smokeCheck(CuriosUtils.itemId(ring) === smokeItem, 'Incorrect Java registry item ID')
@@ -180,7 +184,7 @@ function checkAttackerAndHiddenModifiers() {
 ServerEvents.tick(event => {
   if (smoke === null) return
   try {
-    smokeCheck(++smoke.time <= 200, `Timed out at stage ${smoke.stage}; max health is ${smoke.entity.getMaxHealth()}`)
+    smokeCheck(++smoke.time <= 450, `Timed out at stage ${smoke.stage}; max health is ${smoke.entity.getMaxHealth()}`)
     if (smoke.time % 5 !== 0) return
     var health = smoke.entity.getMaxHealth()
     if (smoke.stage === 0 && health === 24) {
@@ -228,9 +232,211 @@ ServerEvents.tick(event => {
       smokeCheck(smoke.stacks.insertItem(1, Item.of('kubecurios_smoke:zero_chance_ring'), false).isEmpty(), 'Zero chance ring was rejected')
       hit(smoke.entity, smoke.incoming)
       smokeCheck(!smoke.entity.entityTags().contains('kubecurios_zero_chance'), 'Command with 0% chance ran')
-      stopSmoke(event.server, null)
+      startScriptChecks(event.server)
+      smoke.stage++
+    } else if (smoke.stage === 9) {
+      if (continueScriptChecks(event.server)) {
+        startEquipmentChecks()
+        smoke.stage++
+      }
+    } else if (smoke.stage === 10) {
+      if (continueEquipmentChecks()) stopSmoke(event.server, null)
     }
   } catch (err) {
     stopSmoke(event.server, err)
   }
 })
+const $SmokeNeoForge = Java.loadClass('net.neoforged.neoforge.common.NeoForge')
+const $SmokeCommandEvent = Java.loadClass('net.neoforged.neoforge.event.CommandEvent')
+
+function setScriptRing(index, name) {
+  smoke.stacks.extractItem(index, 1, false)
+  if (name) smokeCheck(smoke.stacks.insertItem(index, Item.of(`kubecurios_smoke:${name}`), false).isEmpty(), `Could not equip ${name}`)
+}
+
+function scriptedHit(victim, source, amount) {
+  victim.invulnerableTime = 0
+  const before = victim.getHealth()
+  smokeCheck(victim.hurtServer(smoke.level, source, amount), 'Script hit did not land')
+  return before - victim.getHealth()
+}
+
+function startScriptChecks(server) {
+  const wearer = smoke.entity
+  const target = smoke.target
+  const inv = wearer.getCapability($CuriosCapability.INVENTORY)
+  smoke.scriptSlot = inv.getStacksHandler(smokeSlot).orElseThrow()
+  $SmokeNeoForge.EVENT_BUS['addListener(java.lang.Class,java.util.function.Consumer)']($SmokeCommandEvent, event => {
+    if (event.getParseResults().getReader().getString() === 'tag @s add kc_canceled') event.setCanceled(true)
+  })
+  setScriptRing(0, 'missing_script')
+  setScriptRing(1, 'blood_a')
+  smokeCheck(CuriosUtils.isEquipped(wearer, smokeSlot), 'Missing definition prevented equipping')
+  setScriptRing(0, 'blood_a')
+  wearer.getAttribute($Attributes.MAX_HEALTH).setBaseValue(40)
+  target.getAttribute($Attributes.MAX_HEALTH).setBaseValue(40)
+  wearer.setHealth(20)
+  target.setHealth(40)
+  target.addTag('kc_script_target')
+  wearer.addTag('kc_script_wearer')
+  target.addTag('kc_script_attacker')
+  near(scriptedHit(target, smoke.outgoing, 10), 12, 'Half health damage or same-ID deduplication')
+  smokeCheck(wearer.entityTags().contains('kc_hit'), 'No onHit at half health')
+  wearer.removeTag('kc_hit')
+  var arrow = $EntityType.ARROW.create(smoke.level, $EntitySpawnReason.COMMAND)
+  near(scriptedHit(target, target.damageSources().arrow(arrow, wearer), 10), 12, 'Projectile attribution')
+  smokeCheck(wearer.entityTags().contains('kc_hit'), 'No projectile onHit')
+  wearer.setHealth(19)
+  target.setHealth(40)
+  near(scriptedHit(target, smoke.outgoing, 10), 10, 'Below half health damage')
+  smoke.status = 0
+  smoke.nextCheck = smoke.time + 5
+  smoke.nextEntityTick = wearer.tickCount + 5
+  smoke.checkpointAge = wearer.tickCount
+  smoke.checkpoint = wearer.getPersistentData().getIntOr('kc_tick_count', 0)
+}
+
+function checkCommandResults(server, wearer) {
+  server.runCommandSilent('scoreboard objectives add kc_numeric dummy')
+  wearer.addTag('kc_numeric_target')
+  smoke.target.addTag('kc_numeric_target')
+  server.runCommandSilent('scoreboard players set @e[tag=kc_script_wearer,limit=1] kc_numeric -7')
+  server.runCommandSilent('scoreboard players set @e[tag=kc_script_attacker,limit=1] kc_numeric 2')
+  wearer.addTag('kc_sync')
+  wearer.setHealth(19)
+  scriptedHit(wearer, smoke.incoming, 1)
+  for (const tag of ['kc_condition_true', 'kc_condition_false', 'kc_side_effect', 'kc_side_effect_ok', 'kc_return_zero', 'kc_invalid_command', 'kc_cancel_seen', 'kc_empty_commands', 'kc_hurt', 'kc_numeric_zero', 'kc_numeric_negative', 'kc_numeric_conflict', 'kc_numeric_consistent', 'kc_numeric_invalid']) {
+    smokeCheck(wearer.entityTags().contains(tag), `Missing synchronous command assertion ${tag}`)
+  }
+  smokeCheck(!smoke.target.entityTags().contains('kc_side_effect') && !wearer.entityTags().contains('kc_canceled'), 'Wrong command recipient or ignored cancellation')
+  scriptedHit(wearer, smoke.incoming, 1)
+  smokeCheck(wearer.entityTags().contains('kc_expired_context') && !wearer.entityTags().contains('kc_expired'), 'Expired context accepted command')
+  wearer.removeTag('kc_sync')
+  wearer.addTag('kc_queue')
+  server.runCommandSilent('scoreboard objectives add kc_probe dummy')
+  server.runCommandSilent('scoreboard players set @e[tag=kc_script_wearer,limit=1] kc_probe 0')
+  server.runCommandSilent('scoreboard players set @e[tag=kc_script_wearer,limit=1] kc_numeric 0')
+  wearer.invulnerableTime = 0
+  server.runCommandSilent('damage @e[tag=kc_script_wearer,limit=1] 2 minecraft:mob_attack by @e[tag=kc_script_attacker,limit=1]')
+  const score = server.getScoreboard().getPlayerScoreInfo(wearer, server.getScoreboard().getObjective('kc_probe'))
+  smokeCheck(score.value() === 1, 'Queued command should execute exactly once')
+  smokeCheck(server.getScoreboard().getPlayerScoreInfo(wearer, server.getScoreboard().getObjective('kc_numeric')).value() === 1, 'Numeric queued command did not run exactly once')
+  for (const tag of ['kc_queue_accepted', 'kc_queue_before_zero', 'kc_queued_false_accepted', 'kc_queue_has_no_integer']) {
+    smokeCheck(wearer.entityTags().contains(tag), `Missing nested command assertion ${tag}`)
+  }
+  wearer.removeTag('kc_queue')
+  server.runCommandSilent('scoreboard objectives remove kc_probe')
+  server.runCommandSilent('scoreboard objectives remove kc_numeric')
+}
+
+function continueScriptChecks(server) {
+  const wearer = smoke.entity
+  if (smoke.time < smoke.nextCheck || wearer.tickCount < smoke.nextEntityTick) return false
+  const inventory = wearer.getCapability($CuriosCapability.INVENTORY)
+  const armor = wearer.getAttributeValue($Attributes.ARMOR)
+  const regularArmor = smoke.baseArmor + 2
+  switch (smoke.status++) {
+    case 0:
+      near(armor, regularArmor + 4, 'Low health grants +4 once across two copies')
+      near(wearer.getAttributeValue($Attributes.ARMOR_TOUGHNESS), 2.5, 'Attribute list applies together')
+      smoke.nextCheck += 40
+      smoke.nextEntityTick += 40
+      return false
+    case 1:
+      near(armor, regularArmor + 4, 'Repeated refresh accumulated armor')
+      var periodicCalls = Math.floor(wearer.tickCount / 20) - Math.floor(smoke.checkpointAge / 20)
+      smokeCheck(periodicCalls >= 2 && wearer.getPersistentData().getIntOr('kc_tick_count', 0) - smoke.checkpoint === periodicCalls, 'onTick cadence or deduplication was incorrect')
+      wearer.addTag('exhausted')
+      break
+    case 2:
+      near(armor, regularArmor, 'Exhausted removed conditional armor')
+      wearer.removeTag('exhausted')
+      wearer.setHealth(20)
+      break
+    case 3:
+      near(armor, regularArmor, 'Exact half health does not grant conditional armor')
+      wearer.setHealth(19)
+      break
+    case 4:
+      near(armor, regularArmor + 4, 'Armor returns at low health')
+      inventory.setSlotsActive(smokeSlot, false)
+      break
+    case 5:
+      near(armor, smoke.baseArmor, 'Disabled slots leave no attributed armor')
+      setScriptRing(0, null)
+      setScriptRing(1, null)
+      inventory.setSlotsActive(smokeSlot, true)
+      smoke.scriptSlot.getCosmeticStacks().setStackInSlot(0, Item.of('kubecurios_smoke:blood_a'))
+      break
+    case 6:
+      near(armor, smoke.baseArmor, 'Cosmetic stack grants no attribute')
+      smoke.scriptSlot.getCosmeticStacks().setStackInSlot(0, Item.of('minecraft:air'))
+      setScriptRing(0, 'blood_a')
+      setScriptRing(1, 'blood_b')
+      break
+    case 7:
+      near(armor, regularArmor + 8, 'Different items can reuse the same definition')
+      setScriptRing(1, 'script_only')
+      wearer.addTag('kc_observe')
+      break
+    case 8:
+      near(armor, smoke.baseArmor + 7, 'Independent script and native modifiers')
+      wearer.addTag('kc_invalid')
+      break
+    case 9:
+      near(armor, smoke.baseArmor + 3, 'Invalid arrays clear only their own attributes')
+      wearer.removeTag('kc_invalid')
+      break
+    case 10:
+      near(armor, smoke.baseArmor + 7, 'Conditional attributes recover')
+      wearer.addTag('kc_throw')
+      wearer.setHealth(20)
+      smoke.target.setHealth(40)
+      near(scriptedHit(smoke.target, smoke.outgoing, 10), 11, 'Throwing callback must not swallow adjacent multiplier')
+      break
+    case 11:
+      near(armor, smoke.baseArmor + 3, 'Throwing callback clears its old attributes')
+      wearer.removeTag('kc_throw')
+      wearer.addTag('kc_environment')
+      wearer.setHealth(20)
+      near(scriptedHit(wearer, wearer.damageSources().fall(), 4), 2, 'No-attacker damage still calls receive-side Pre')
+      smokeCheck(!wearer.entityTags().contains('kc_hurt'), 'Environmental damage entered Post')
+      checkCommandResults(server, wearer)
+      wearer.removeTag('kc_hurt')
+      wearer.getAttribute($Attributes.MAX_ABSORPTION).setBaseValue(10)
+      wearer.setAbsorptionAmount(10)
+      near(scriptedHit(wearer, smoke.incoming, 1), 0, 'Absorption must consume the entire hit')
+      smokeCheck(!wearer.entityTags().contains('kc_hurt'), 'Absorbed damage entered Post')
+      wearer.setAbsorptionAmount(0)
+      var victim = $EntityType.ZOMBIE.create(smoke.level, $EntitySpawnReason.COMMAND)
+      smoke.scriptVictim = victim
+      var victimStacks = victim.getCapability($CuriosCapability.INVENTORY).getStacksHandler(smokeSlot).orElseThrow().getStacks()
+      smokeCheck(victimStacks.insertItem(0, Item.of('kubecurios_smoke:blood_a'), false).isEmpty(), 'Target script ring was rejected')
+      victim.addTag('kc_script_target')
+      victim.getAttribute($Attributes.MAX_ABSORPTION).setBaseValue(10)
+      victim.setAbsorptionAmount(10)
+      var damageSource = victim.damageSources().mobAttack(wearer)
+      wearer.removeTag('kc_hit')
+      near(scriptedHit(victim, damageSource, 4), 0, 'Absorption at the scripted target')
+      smokeCheck(!wearer.entityTags().contains('kc_hit') && !victim.entityTags().contains('kc_hurt'), 'Absorption triggered a Post script')
+      victim.setAbsorptionAmount(0)
+      victim.setHealth(1)
+      scriptedHit(victim, damageSource, 10)
+      smokeCheck(wearer.entityTags().contains('kc_kill') && !victim.entityTags().contains('kc_hurt'), 'Lethal damage should only trigger onHit')
+      wearer.removeTag('kc_observe')
+      setScriptRing(0, 'legacy_failure')
+      setScriptRing(1, null)
+      break
+    case 12:
+      near(armor, smoke.baseArmor, `Unequip clears only old dynamic attributes (age ${wearer.tickCount}, slots ${smoke.stacks.getStackInSlot(0)}, ${smoke.stacks.getStackInSlot(1)}, modifiers ${wearer.getAttribute($Attributes.ARMOR).getModifiers()})`)
+      scriptedHit(wearer, smoke.incoming, 1)
+      wearer.addTag('kc_allow_legacy')
+      scriptedHit(wearer, smoke.incoming, 1)
+      smokeCheck(!wearer.entityTags().contains('kc_legacy_ran'), 'Old command must consume cooldown on false result')
+      console.info('[KubeCurios script] PASS: combat, equipment, command results and nested execution')
+      return true
+  }
+  smoke.nextCheck = smoke.time + 5
+  smoke.nextEntityTick = smoke.entity.tickCount + 5
+  return false
+}
