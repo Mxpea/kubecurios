@@ -6,6 +6,20 @@
 
 为 Minecraft 26.1.2 的 KubeJS 启动脚本提供 Curios 饰品物品类型，不依赖 `ServerEvents.tags`。
 
+## 面向 Agent：安装脚本制作 Skill
+
+[`kubecurios-scripting`](.agents/skills/kubecurios-scripting/SKILL.md) 指导 Agent 核对 API、确认物品与素材、编写脚本、组织试玩，并在交付目录生成 `kjs/test.md`。它是给 Agent 的工作流程，不是 Minecraft 模组，不需要放进游戏目录。
+
+- **在本仓库使用**：用 Codex 打开本仓库，在任务中输入 `$kubecurios-scripting`，无需另装。制作或修改 KubeCurios 脚本时，本仓库的 [`AGENTS.md`](AGENTS.md) 也要求 Agent 执行该流程。
+- **安装到另一个项目**：将本仓库的 `.agents/skills/kubecurios-scripting/` 整个目录放到目标项目的 `.agents/skills/` 下，然后从目标项目调用该 Skill。若希望 Codex 在多个项目中都能使用它，可以改装到个人目录 `~/.agents/skills/`（Windows 为 `%USERPROFILE%\.agents\skills\`）。保留 `references/`，不要只复制 `SKILL.md`。
+- **其他 Agent**：按该工具的 Skill 安装方式导入整个目录。如果工具不支持自动发现，在任务里明确要求先读取 `kubecurios-scripting/SKILL.md` 及它指向的参考文件，并按顺序执行所有步骤。
+
+可以直接这样发起任务：
+
+```text
+$kubecurios-scripting 为我的整合包制作一组 KubeCurios 饰品。先向我确认项目名、物品大类和所需资产，再按 Skill 的步骤交付和验收。
+```
+
 ## 在脚本中注册饰品
 
 将以下脚本放入 `kubejs/startup_scripts`，然后重启游戏或服务器。专用服务器的客户端也需要安装该模组和同一份物品注册脚本。
