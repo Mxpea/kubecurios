@@ -3,6 +3,6 @@
   "minVersion": "0.8",
   "package": "com.aurelith.kubecurios.mixin",
   "mixins": ["LivingEntityVisibilityMixin", "TargetingConditionsMixin"],
-  "client": ["HumanoidArmorLayerMixin"],
+  "client": ["HumanoidArmorLayerMixin", "ItemCooldownOverlayMixin"],
   "injectors": { "defaultRequire": 1 }
 }

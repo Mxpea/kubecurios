@@ -18,6 +18,8 @@ public class KubeCurios {
         NeoForge.EVENT_BUS.addListener(this::validateSlots);
         NeoForge.EVENT_BUS.addListener(CurioCombatEffects::modifyDamage);
         NeoForge.EVENT_BUS.addListener(CurioCombatEffects::onHurt);
+        NeoForge.EVENT_BUS.addListener(CurioActiveSkill::onLogin);
+        NeoForge.EVENT_BUS.addListener(CurioActiveSkill::onRespawn);
         NeoForge.EVENT_BUS.addListener(CurioScriptRuntime::onTick);
         NeoForge.EVENT_BUS.addListener(CurioScriptRuntime::onLeave);
         NeoForge.EVENT_BUS.addListener(CurioScriptRuntime::onStop);

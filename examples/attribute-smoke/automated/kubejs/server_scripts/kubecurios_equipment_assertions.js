@@ -145,6 +145,7 @@ function startPlayerSkillChecks() {
   smokeCheck(data.getIntOr('kc_active_calls', 0) === 1 && shadow.getDamageValue() === 1,
     'Active callback should run once and spend durability only on its source copy')
   smokeCheck(stacks.getStackInSlot(1).getDamageValue() === 0, 'Second active curio copy spent durability')
+  smokeCheck(!player.getCooldowns().isOnCooldown(shadow), 'Skill cooldown must not block vanilla item use')
   stacks.setStackInSlot(1, beacon)
   smoke.skillPlayer = player
   smoke.skillInventory = inventory
