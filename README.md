@@ -63,6 +63,10 @@ StartupEvents.registry('item', event => {
 
 `.script(id)` 支持通过 `CurioScripts.define(...)` 注册条件伤害、定期回调与临时属性。使用示例见[命名脚本效果](docs/wiki/Scripting-API.md#命名脚本效果)。
 
+`.hostileDetectionRangePercent(-40)` 可缩短敌对怪物察觉佩戴者的距离。`.onActiveCommand(command, cooldownTicks)` 和 `onActivate(ctx)` 支持主动技能，默认按 **V** 发动。详见[察觉距离和主动技能](docs/wiki/Scripting-API.md#敌对怪物察觉距离)。
+
+`.provokeNeutralMobs(radius)` 持续激怒范围内的中立生物。`.ignoreHostileMob(typeOrTag)` 让匹配的敌对生物跳过对佩戴者的主动寻敌，仍允许它们反击。`CuriosUtils.setAggro(mob, target)` 和 `CuriosUtils.clearAggro(mob, target)` 可在服务端脚本直接修改单只生物的目标仇恨。详见[生物仇恨](docs/wiki/Scripting-API.md#生物仇恨)。
+
 ## 饰品外观
 
 `.armorAppearance('head', 'minecraft:gold')` 用原版盔甲层显示金头盔，不占用原版头盔格。`.itemAppearance('body', 0, 5, -3.5, 0.4)` 则用 Curios 原生渲染接口把物品模型挂在躯干上。使用说明与自定义资源示例见[饰品佩戴外观](docs/wiki/Wearable-Appearance.md)。

@@ -5,6 +5,170 @@ const $EquipmentValueInput = Java.loadClass('net.minecraft.world.level.storage.T
 const $EquipmentProblemReporter = Java.loadClass('net.minecraft.util.ProblemReporter')
 const $EquipmentFakePlayerFactory = Java.loadClass('net.neoforged.neoforge.common.util.FakePlayerFactory')
 const $EquipmentGameType = Java.loadClass('net.minecraft.world.level.GameType')
+const $EquipmentTargeting = Java.loadClass('net.minecraft.world.entity.ai.targeting.TargetingConditions')
+const $EquipmentActiveSkill = Java.loadClass('com.aurelith.kubecurios.CurioActiveSkill')
+const $AggroMemory = Java.loadClass('net.minecraft.world.entity.ai.memory.MemoryModuleType')
+const $AggroHurtByGoal = Java.loadClass('net.minecraft.world.entity.ai.goal.target.HurtByTargetGoal')
+
+function checkAggro() {
+  const wearer = smoke.entity
+  const level = smoke.level
+  const data = wearer.getPersistentData()
+  smoke.stacks.setStackInSlot(0, Item.of('kubecurios_smoke:aggro_probe'))
+
+  for (const type of [$EntityType.ZOMBIE, $EntityType.ENDERMAN, $EntityType.PIGLIN]) {
+    var mob = type.create(level, $EntitySpawnReason.COMMAND)
+    var source = mob.damageSources().mobAttack(wearer)
+    data.putBoolean('kc_aggro_changed', false)
+    scriptedHit(mob, source, 1)
+    smokeCheck(data.getBooleanOr('kc_aggro_changed', false), `Script could not set ${type} aggro`)
+    smokeCheck(mob.getTarget().getId() === wearer.getId(), `Wrong ${type} target`)
+
+    var retaliation = null
+    if (type === $EntityType.ZOMBIE) {
+      retaliation = mob.targetSelector.getAvailableGoals().stream()
+        .filter(goal => goal.getGoal() instanceof $AggroHurtByGoal).findFirst().orElseThrow()
+      retaliation.start()
+    } else if (type === $EntityType.ENDERMAN) {
+      smokeCheck(mob.getPersistentAngerTarget().matches(wearer) && mob.isAngry(), 'Enderman native anger was not set')
+    } else {
+      smokeCheck(mob.getBrain().getMemory($AggroMemory.ANGRY_AT).isPresent(), 'Piglin anger memory was not set')
+    }
+
+    wearer.addTag('kc_clear_aggro')
+    data.putBoolean('kc_aggro_changed', false)
+    scriptedHit(mob, source, 1)
+    wearer.removeTag('kc_clear_aggro')
+    smokeCheck(data.getBooleanOr('kc_aggro_changed', false) && mob.getTarget() === null, `Script could not clear ${type} aggro`)
+    if (retaliation !== null) {
+      smokeCheck(!retaliation.isRunning() && !retaliation.getGoal().canContinueToUse(), 'Zombie retained its running retaliation target')
+    } else if (type === $EntityType.ENDERMAN) {
+      smokeCheck(mob.getPersistentAngerTarget() === null && !mob.isAngry(), 'Enderman native anger was not cleared')
+    } else {
+      smokeCheck(mob.getBrain().getMemory($AggroMemory.ANGRY_AT).isEmpty(), 'Piglin anger memory was not cleared')
+    }
+
+    if (type === $EntityType.ZOMBIE) {
+      mob.setTarget(smoke.restoredWearer)
+      wearer.addTag('kc_clear_aggro')
+      scriptedHit(mob, source, 1)
+      wearer.removeTag('kc_clear_aggro')
+      smokeCheck(mob.getTarget().getId() === smoke.restoredWearer.getId(), 'Clear aggro erased an unrelated target')
+      smokeCheck(CuriosUtils.setAggro(mob, wearer) && mob.getTarget().getId() === wearer.getId(), 'Global helper could not set aggro')
+      smokeCheck(CuriosUtils.clearAggro(mob, wearer) && mob.getTarget() === null, 'Global helper could not clear aggro')
+      smokeCheck(!CuriosUtils.clearAggro(mob, wearer) && !CuriosUtils.setAggro(mob, null), 'Global helper accepted a missing target')
+    }
+    mob.discard()
+  }
+  console.info('[KubeCurios aggro] PASS: Goal targeting, native anger, Brain memories and targeted clearing')
+}
+
+function startAggroAuraChecks() {
+  const wearer = smoke.entity
+  const level = smoke.level
+  const zombie = $EntityType.ZOMBIE.create(level, $EntitySpawnReason.COMMAND)
+  const skeleton = $EntityType.SKELETON.create(level, $EntitySpawnReason.COMMAND)
+  const creeper = $EntityType.CREEPER.create(level, $EntitySpawnReason.COMMAND)
+  zombie.setPos(wearer.getX() + 3, wearer.getY(), wearer.getZ())
+  skeleton.setPos(zombie.getX(), zombie.getY(), zombie.getZ())
+  creeper.setPos(zombie.getX(), zombie.getY(), zombie.getZ())
+  const discovery = $EquipmentTargeting.forCombat().range(20).ignoreLineOfSight()
+  const retaliation = discovery.copy().ignoreInvisibilityTesting()
+  smoke.stacks.setStackInSlot(0, Item.of('minecraft:air'))
+  smokeCheck(discovery.test(level, zombie, wearer) && discovery.test(level, skeleton, wearer),
+    'Targets must be eligible before equipping the aura')
+  smoke.stacks.setStackInSlot(0, Item.of('kubecurios_smoke:aggro_aura'))
+  smokeCheck(!discovery.test(level, zombie, wearer), 'Ignored zombie could proactively select the wearer')
+  smokeCheck(!discovery.test(level, skeleton, wearer), 'Skeleton matched by a tag could proactively select the wearer')
+  smokeCheck(discovery.test(level, creeper, wearer), 'Unlisted creeper was suppressed')
+  smokeCheck(retaliation.test(level, zombie, wearer), 'Vanilla retaliation was suppressed')
+  zombie.setLastHurtByMob(wearer)
+  smokeCheck(discovery.test(level, zombie, wearer), 'The wearer should remain a valid revenge target')
+  zombie.setLastHurtByMob(null)
+  smoke.equipmentInventory.setSlotActive(smokeSlot, 0, false)
+  smokeCheck(discovery.test(level, zombie, wearer), 'An inactive aura should not suppress targeting')
+  smoke.equipmentInventory.setSlotActive(smokeSlot, 0, true)
+
+  smoke.aggroWolves = [3, 9].map(distance => {
+    const wolf = $EntityType.WOLF.create(level, $EntitySpawnReason.COMMAND)
+    wolf.setPos(wearer.getX() + distance, wearer.getY(), wearer.getZ())
+    wolf.setNoAi(true)
+    wolf.setNoGravity(true)
+    smokeCheck(level.addFreshEntity(wolf), 'Could not add wolf for the provocation check')
+    return wolf
+  })
+}
+
+function finishAggroAuraChecks() {
+  const nearby = smoke.aggroWolves[0]
+  const outside = smoke.aggroWolves[1]
+  smokeCheck(nearby.isAngry() && nearby.getTarget().getId() === smoke.entity.getId(), 'Neutral wolf did not acquire the wearer in range')
+  smokeCheck(!outside.isAngry() && outside.getTarget() === null, 'A wolf outside the radius was provoked')
+  console.info('[KubeCurios aggro] PASS: passive targeting exclusions, retaliation and provocation radius')
+}
+
+function startPlayerSkillChecks() {
+  const player = $EquipmentFakePlayerFactory.getMinecraft(smoke.level)
+  const inventory = player.getCapability($CuriosCapability.INVENTORY)
+  const handler = inventory.getStacksHandler(smokeSlot).orElseThrow()
+  const stacks = handler.getStacks()
+  const zombie = smoke.entity
+  const cow = $EntityType.COW.create(smoke.level, $EntitySpawnReason.COMMAND)
+  // Exercise the vanilla visibility-distance gate independently of fake-player combat eligibility.
+  const targeting = $EquipmentTargeting.forNonCombat().range(20).ignoreLineOfSight()
+  const shadow = Item.of('kubecurios_smoke:shadow_ring')
+  const beacon = Item.of('kubecurios_smoke:beacon_ring')
+  player.setPos(zombie.getX() + 16, zombie.getY(), zombie.getZ())
+  smokeCheck(targeting.test(smoke.level, zombie, player), `Zombie should see the unequipped player at 16 blocks (distance=${zombie.distanceToSqr(player)}, visibility=${player.getVisibilityPercent(zombie)}, visible=${player.canBeSeenByAnyone()})`)
+  stacks.setStackInSlot(0, shadow)
+  stacks.setStackInSlot(1, shadow.copy())
+  near(player.getVisibilityPercent(zombie), 0.5, 'Same detection item must count once')
+  near(player.getVisibilityPercent(cow), 1, 'Passive mobs must retain normal visibility')
+  smokeCheck(!targeting.test(smoke.level, zombie, player), 'Zombie should not detect the concealed player at 16 blocks')
+  inventory.setSlotActive(smokeSlot, 0, false)
+  inventory.setSlotActive(smokeSlot, 1, false)
+  near(player.getVisibilityPercent(zombie), 1, 'Disabled slots must not modify detection')
+  inventory.setSlotsActive(smokeSlot, true)
+  stacks.setStackInSlot(1, beacon)
+  near(player.getVisibilityPercent(zombie), 0.75, 'Different detection items should multiply')
+  stacks.setStackInSlot(0, Item.of('minecraft:air'))
+  player.setPos(zombie.getX() + 25, zombie.getY(), zombie.getZ())
+  smokeCheck(targeting.test(smoke.level, zombie, player), 'Positive modifier should make 25 blocks reachable with a 20-block base')
+
+  const data = player.getPersistentData()
+  data.putInt('kc_active_calls', 0)
+  player.removeTag('kc_active_command')
+  stacks.setStackInSlot(0, shadow)
+  stacks.setStackInSlot(1, shadow.copy())
+  $EquipmentActiveSkill.activate(player)
+  $EquipmentActiveSkill.activate(player)
+  smokeCheck(data.getIntOr('kc_active_calls', 0) === 1 && shadow.getDamageValue() === 1,
+    'Active callback should run once and spend durability only on its source copy')
+  smokeCheck(stacks.getStackInSlot(1).getDamageValue() === 0, 'Second active curio copy spent durability')
+  stacks.setStackInSlot(1, beacon)
+  smoke.skillPlayer = player
+  smoke.skillInventory = inventory
+  smoke.skillStacks = stacks
+}
+
+function checkPlayerSkillsDuringCooldown() {
+  const player = smoke.skillPlayer
+  smoke.skillStacks.setStackInSlot(0, Item.of('minecraft:air'))
+  smoke.skillStacks.setStackInSlot(0, Item.of('kubecurios_smoke:shadow_ring'))
+  $EquipmentActiveSkill.activate(player)
+  smokeCheck(player.getPersistentData().getIntOr('kc_active_calls', 0) === 1, 'Re-equipping bypassed the active cooldown')
+  smokeCheck(player.entityTags().contains('kc_active_command'), 'Independent active command did not execute as the wearer')
+}
+
+function finishPlayerSkillChecks() {
+  const player = smoke.skillPlayer
+  player.removeTag('kc_active_command')
+  smoke.skillInventory.setSlotsActive(smokeSlot, false)
+  $EquipmentActiveSkill.activate(player)
+  smokeCheck(player.getPersistentData().getIntOr('kc_active_calls', 0) === 1, 'Inactive skill slot executed a callback')
+  smokeCheck(!player.entityTags().contains('kc_active_command'), 'Inactive skill slot executed a command')
+  smoke.skillInventory.setSlotsActive(smokeSlot, true)
+}
 
 function checkPlayerDurability() {
   const player = $EquipmentFakePlayerFactory.getMinecraft(smoke.level)
@@ -177,6 +341,26 @@ function continueEquipmentChecks() {
       smokeCheck(loadedWearer.getPersistentData().getLongOr('kc_equipped_ticks', -1) === smoke.equipTime + loadedWearer.tickCount - smoke.restoredAt,
         'Restored wearer did not resume counting exactly once per equipped tick')
       checkPlayerDurability()
+      startPlayerSkillChecks()
+      break
+    case 8:
+      checkPlayerSkillsDuringCooldown()
+      smoke.equipmentAt = wearer.tickCount + 20
+      return false
+    case 9:
+      finishPlayerSkillChecks()
+      break
+    case 10:
+      $EquipmentActiveSkill.activate(smoke.skillPlayer)
+      smokeCheck(smoke.skillPlayer.getPersistentData().getIntOr('kc_active_calls', 0) === 2
+        && smoke.skillPlayer.entityTags().contains('kc_active_command'), 'Active skills did not recover after cooldown')
+      checkAggro()
+      startAggroAuraChecks()
+      smoke.equipmentAt = wearer.tickCount + 15
+      return false
+    case 11:
+      finishAggroAuraChecks()
+      console.info('[KubeCurios skill] PASS: hostile detection, active skill sources and cooldowns')
       console.info('[KubeCurios equipment] PASS: source slots, tags, cumulative equipped time and save/load, durability and enchantment')
       return true
   }

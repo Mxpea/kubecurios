@@ -2,6 +2,7 @@
   "required": true,
   "minVersion": "0.8",
   "package": "com.aurelith.kubecurios.mixin",
+  "mixins": ["LivingEntityVisibilityMixin", "TargetingConditionsMixin"],
   "client": ["HumanoidArmorLayerMixin"],
   "injectors": { "defaultRequire": 1 }
 }

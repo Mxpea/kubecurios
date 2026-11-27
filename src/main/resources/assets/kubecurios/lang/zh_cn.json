@@ -1,4 +1,11 @@
 {
+  "key.categories.kubecurios.curios": "KubeCurios",
+  "key.kubecurios.activate_curios": "激活饰品技能",
+  "kubecurios.tooltip.active_skill": "主动技能：%s",
+  "kubecurios.tooltip.aggro.provoke": "激怒 %s 格内的中立生物",
+  "kubecurios.tooltip.aggro.ignore": "%s 不会主动将你视为目标",
+  "kubecurios.tooltip.detection.increase": "敌对怪物察觉距离提升%s",
+  "kubecurios.tooltip.detection.decrease": "敌对怪物察觉距离缩短%s",
   "kubecurios.tooltip.damage.incoming.increase": "受到的伤害提升%s",
   "kubecurios.tooltip.damage.incoming.decrease": "受到的伤害减免%s",
   "kubecurios.tooltip.damage.outgoing.increase": "造成的伤害提升%s",

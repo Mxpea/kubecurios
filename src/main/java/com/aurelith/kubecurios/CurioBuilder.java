@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
+import net.minecraft.ChatFormatting;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
@@ -36,6 +37,11 @@ public final class CurioBuilder extends ItemBuilder {
     private Consumer<EquipContext> equipCallback;
     private Consumer<EquipContext> unequipCallback;
     private @Nullable CurioCombatEffects.HurtTrigger hurtTrigger;
+    private @Nullable String activeCommand;
+    private int activeCooldownTicks = 20;
+    private double hostileDetectionRangePercent;
+    private double provokeRadius;
+    private final Set<CurioAggro.HostileFilter> ignoredHostileMobs = new LinkedHashSet<>();
     private double incomingDamagePercent;
     private double outgoingDamagePercent;
     private final Map<CurioCombatEffects.DamageFilter, Double> damageByType = new LinkedHashMap<>();
@@ -104,10 +110,7 @@ public final class CurioBuilder extends ItemBuilder {
     }
 
     public CurioBuilder onHurtCommand(String command, int cooldownTicks, String executor, double chancePercent) {
-        String line = command.strip();
-        if (command.contains("\n") || command.contains("\r") || line.isEmpty() || line.equals("/")) {
-            throw new IllegalArgumentException("Expected one nonempty Curio command for " + id);
-        }
+        String line = requireCommand(command);
         requireCooldown(cooldownTicks);
         if (!Double.isFinite(chancePercent) || chancePercent < 0 || chancePercent > 100) {
             throw new IllegalArgumentException("Curio command chance must be between 0 and 100 for " + id);
@@ -120,6 +123,50 @@ public final class CurioBuilder extends ItemBuilder {
             default -> throw new IllegalArgumentException("Curio command executor must be 'self' or 'attacker' for " + id);
         };
         return this;
+    }
+
+    public CurioBuilder hostileDetectionRangePercent(double percent) {
+        if (!Double.isFinite(percent) || percent < -100) {
+            throw new IllegalArgumentException("Curio detection range percent must be finite and at least -100 for " + id);
+        }
+        hostileDetectionRangePercent = percent;
+        return this;
+    }
+
+    public CurioBuilder provokeNeutralMobs(double radius) {
+        if (!Double.isFinite(radius) || radius < 0 || radius > 128) {
+            throw new IllegalArgumentException("Curio provocation radius must be between 0 and 128 blocks for " + id);
+        }
+        provokeRadius = radius;
+        return this;
+    }
+
+    public CurioBuilder ignoreHostileMob(String typeOrTag) {
+        ignoredHostileMobs.add(CurioAggro.HostileFilter.parse(typeOrTag));
+        return this;
+    }
+
+    public CurioBuilder onActiveCommand(String command, int cooldownTicks) {
+        String line = requireCommand(command);
+        activeSkillCooldown(cooldownTicks);
+        activeCommand = line;
+        return this;
+    }
+
+    public CurioBuilder activeSkillCooldown(int cooldownTicks) {
+        if (cooldownTicks <= 0) {
+            throw new IllegalArgumentException("Curio active skill cooldown must be positive for " + id);
+        }
+        activeCooldownTicks = cooldownTicks;
+        return this;
+    }
+
+    private String requireCommand(String command) {
+        String line = command.strip();
+        if (command.contains("\n") || command.contains("\r") || line.isEmpty() || line.equals("/")) {
+            throw new IllegalArgumentException("Expected one nonempty Curio command for " + id);
+        }
+        return line;
     }
 
     /** Existing scripts can migrate to onHurtCommand. */
@@ -208,13 +255,36 @@ public final class CurioBuilder extends ItemBuilder {
         var combatEffects = hurtTrigger == null && incomingDamagePercent == 0 && outgoingDamagePercent == 0 && damageByType.isEmpty()
                 ? null : new CurioCombatEffects(hurtTrigger, incomingDamagePercent,
                         outgoingDamagePercent, new LinkedHashMap<>(damageByType));
-        var combatTooltips = hideAttributes || combatEffects == null ? List.<Component>of() : combatEffects.tooltips();
         var script = scriptId == null ? null : CurioScripts.get(scriptId);
         if (scriptId != null && script == null) {
             KubeCurios.LOGGER.error("Curio '{}' references undefined script '{}'", id, scriptId);
         }
-        Item item = new ScriptedCurioItem(properties, equipCallback, unequipCallback, combatEffects, combatTooltips,
-                hideAttributes, Set.copyOf(slots), script, Map.copyOf(armorAppearances), itemAppearance);
+        var activeSkill = activeCommand != null || (script != null && script.handlers().containsKey(CurioScripts.Hook.ACTIVATE))
+                ? new CurioActiveSkill(activeCommand, activeCooldownTicks) : null;
+        var tooltips = new ArrayList<Component>();
+        if (!hideAttributes) {
+            if (combatEffects != null) {
+                tooltips.addAll(combatEffects.tooltips());
+            }
+            if (hostileDetectionRangePercent != 0) {
+                boolean increase = hostileDetectionRangePercent > 0;
+                tooltips.add(Component.translatable("kubecurios.tooltip.detection." + (increase ? "increase" : "decrease"),
+                        CurioCombatEffects.formatPercent(hostileDetectionRangePercent))
+                        .withStyle(increase ? ChatFormatting.RED : ChatFormatting.BLUE));
+            }
+            if (activeSkill != null) {
+                tooltips.add(Component.translatable("kubecurios.tooltip.active_skill", Component.keybind(CurioActiveSkill.KEY_NAME)));
+            }
+            if (provokeRadius > 0) {
+                tooltips.add(Component.translatable("kubecurios.tooltip.aggro.provoke", provokeRadius).withStyle(ChatFormatting.RED));
+            }
+            for (var filter : ignoredHostileMobs) {
+                tooltips.add(Component.translatable("kubecurios.tooltip.aggro.ignore", filter.label()).withStyle(ChatFormatting.BLUE));
+            }
+        }
+        Item item = new ScriptedCurioItem(properties, equipCallback, unequipCallback, combatEffects, List.copyOf(tooltips),
+                hideAttributes, Set.copyOf(slots), script, Map.copyOf(armorAppearances), itemAppearance,
+                hostileDetectionRangePercent, activeSkill, new CurioAggro.Rules(provokeRadius, Set.copyOf(ignoredHostileMobs)));
         slots.forEach(slot -> CurioSlotWhitelist.allow(slot, id));
         return item;
     }
@@ -234,12 +304,16 @@ public final class CurioBuilder extends ItemBuilder {
         private final @Nullable CurioScripts.Definition script;
         private final Map<EquipmentSlot, CurioArmorAppearance> armorAppearances;
         private final @Nullable CurioItemAppearance itemAppearance;
+        private final double hostileDetectionRangePercent;
+        private final @Nullable CurioActiveSkill activeSkill;
+        private final CurioAggro.Rules aggroRules;
 
         private ScriptedCurioItem(Properties properties, Consumer<EquipContext> equipCallback,
                                   Consumer<EquipContext> unequipCallback, @Nullable CurioCombatEffects combatEffects,
                                   List<Component> combatTooltips, boolean hideAttributes, Set<String> slots,
                                   @Nullable CurioScripts.Definition script, Map<EquipmentSlot, CurioArmorAppearance> armorAppearances,
-                                  @Nullable CurioItemAppearance itemAppearance) {
+                                  @Nullable CurioItemAppearance itemAppearance, double hostileDetectionRangePercent,
+                                  @Nullable CurioActiveSkill activeSkill, CurioAggro.Rules aggroRules) {
             super(properties);
             this.equipCallback = equipCallback;
             this.unequipCallback = unequipCallback;
@@ -250,6 +324,9 @@ public final class CurioBuilder extends ItemBuilder {
             this.script = script;
             this.armorAppearances = armorAppearances;
             this.itemAppearance = itemAppearance;
+            this.hostileDetectionRangePercent = hostileDetectionRangePercent;
+            this.activeSkill = activeSkill;
+            this.aggroRules = aggroRules;
         }
 
         @Override
@@ -277,6 +354,18 @@ public final class CurioBuilder extends ItemBuilder {
             return combatEffects;
         }
 
+        double hostileDetectionRangePercent() {
+            return hostileDetectionRangePercent;
+        }
+
+        @Nullable CurioActiveSkill activeSkill() {
+            return activeSkill;
+        }
+
+        CurioAggro.Rules aggroRules() {
+            return aggroRules;
+        }
+
         Map<EquipmentSlot, CurioArmorAppearance> armorAppearances() {
             return armorAppearances;
         }
@@ -288,12 +377,18 @@ public final class CurioBuilder extends ItemBuilder {
         @Override
         public void curioTick(SlotContext context, ItemStack stack) {
             var wearer = context.entity();
-            if (script != null && !context.cosmetic() && appliesTo(context.identifier()) && wearer != null
-                    && wearer.isAlive() && !stack.isEmpty() && wearer.level() instanceof ServerLevel level) {
+            if (context.cosmetic() || !appliesTo(context.identifier()) || wearer == null || !wearer.isAlive()
+                    || stack.isEmpty() || !(wearer.level() instanceof ServerLevel level)) {
+                return;
+            }
+            if (script != null) {
                 String item = MyCuriosUtils.itemId(stack);
                 if (item != null) {
                     CurioWearTime.tick(wearer, item, level.getServer().getTickCount());
                 }
+            }
+            if (aggroRules.provokeRadius() > 0 && wearer.tickCount % 10 == 0) {
+                CurioAggro.tickProvocation(wearer, level, context.identifier(), context.index());
             }
         }
 

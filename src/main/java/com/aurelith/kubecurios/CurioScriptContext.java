@@ -49,6 +49,14 @@ public class CurioScriptContext implements CustomJavaToJsWrapper {
         return active ? CurioScriptCommands.run(entity, command, diagnostic).result() : null;
     }
 
+    public boolean setAggro(@Nullable LivingEntity mob, @Nullable LivingEntity target) {
+        return active && mob != null && mob.level() == entity.level() && CurioAggro.set(mob, target);
+    }
+
+    public boolean clearAggro(@Nullable LivingEntity mob, @Nullable LivingEntity target) {
+        return active && mob != null && mob.level() == entity.level() && CurioAggro.clear(mob, target);
+    }
+
     public int countOtherEquipped(String tag) {
         if (!tag.startsWith("#")) {
             throw new IllegalArgumentException("Expected an item tag, e.g. #mypack:blood_set");

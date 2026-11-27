@@ -14,6 +14,14 @@ public final class MyCuriosUtils {
         return CurioEquipment.hasActive(entity, slot.id());
     }
 
+    public static boolean setAggro(@Nullable LivingEntity mob, @Nullable LivingEntity target) {
+        return CurioAggro.set(mob, target);
+    }
+
+    public static boolean clearAggro(@Nullable LivingEntity mob, @Nullable LivingEntity target) {
+        return CurioAggro.clear(mob, target);
+    }
+
     /** Returns null for an empty stack or an unregistered item. */
     public static @Nullable String itemId(ItemStack stack) {
         if (stack.isEmpty()) {

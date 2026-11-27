@@ -22,6 +22,7 @@ function smokeCheck(condition, message) {
 }
 
 function stopSmoke(server, error) {
+  if (smoke && smoke.aggroWolves) smoke.aggroWolves.forEach(wolf => wolf.discard())
   if (smoke && smoke.entity) smoke.entity.discard()
   if (smoke && smoke.target) smoke.target.discard()
   if (smoke && smoke.scriptVictim) smoke.scriptVictim.discard()

@@ -1,4 +1,11 @@
 {
+  "key.categories.kubecurios.curios": "KubeCurios",
+  "key.kubecurios.activate_curios": "Activate curio skills",
+  "kubecurios.tooltip.active_skill": "Active skill: %s",
+  "kubecurios.tooltip.aggro.provoke": "Provokes neutral mobs within %s blocks",
+  "kubecurios.tooltip.aggro.ignore": "%s will not seek you out as a target",
+  "kubecurios.tooltip.detection.increase": "Hostile mob detection range increased by %s",
+  "kubecurios.tooltip.detection.decrease": "Hostile mob detection range reduced by %s",
   "kubecurios.tooltip.damage.incoming.increase": "Damage taken increased by %s",
   "kubecurios.tooltip.damage.incoming.decrease": "Damage taken reduced by %s",
   "kubecurios.tooltip.damage.outgoing.increase": "Damage dealt increased by %s",

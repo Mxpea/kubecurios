@@ -25,6 +25,11 @@ StartupEvents.registry('item', event => {
 | `.slot(slotId)` | 将当前饰品加入指定槽位的白名单。至少声明一个槽位，可以链式声明多个。槽位 ID 使用 `ring` 这样的字符串。 |
 | `.attribute(attributeId, amount, operation)` | 为已声明的槽位添加一项装备属性，可以多次调用。 |
 | `.onHurtCommand(command, cooldownTicks[, executor][, chancePercent])` | 受攻击并损失生命后按概率执行一条命令。默认执行者为佩戴者，概率为 100%。 |
+| `.hostileDetectionRangePercent(percent)` | 调整敌对怪物察觉佩戴者的距离。`-40` 表示把原版察觉距离乘 `0.6`。 |
+| `.provokeNeutralMobs(radius)` | 持续激怒半径内可攻击佩戴者的中立生物。`0` 关闭效果。 |
+| `.ignoreHostileMob(typeOrTag)` | 让指定类型的敌对生物跳过对佩戴者的主动寻敌。支持实体类型 ID 和 `#` 实体类型标签，可以多次调用。 |
+| `.onActiveCommand(command, cooldownTicks)` | 按主动技能键时，以佩戴者为执行者运行一条命令。 |
+| `.activeSkillCooldown(cooldownTicks)` | 设置主动技能的冷却 tick 数。只写 `onActivate` 时默认为 `20`。 |
 | `.incomingDamagePercent(percent)` | 调整受到的伤害。`-10` 表示减免 10%。 |
 | `.outgoingDamagePercent(percent)` | 调整归属于佩戴者的伤害。`15` 表示提高 15%。 |
 | `.incomingDamageTypePercent(typeOrTag, percent)` | 只调整匹配指定伤害类型或标签的受伤数值。 |
@@ -113,6 +118,54 @@ StartupEvents.registry('item', event => {
 
 受伤减免和输出提升显示为蓝色，受伤提升和输出降低显示为红色。例如 `.incomingDamagePercent(10)` 显示红色的「受到的伤害提升10%」，`-10` 显示蓝色的「受到的伤害减免10%」。护甲和韧性通过 Curios 的常规属性提示显示。调用 `.hideAttribute()` 会隐藏这些自动属性行，手写的 `.tooltip(...)`、物品描述和实际效果都保留。命令效果的说明可以通过手写提示提供。
 
+## 敌对怪物察觉距离
+
+`.hostileDetectionRangePercent(-40)` 会把敌对怪物用于发现佩戴玩家的原版可见度乘 `0.6`。正数增加，`0` 清除该物品的设置。下蹲、隐身和怪物头颅等原版修正继续生效。同一玩家佩戴多件同款只算一次，不同物品的倍率相乘。外观格和停用格不参与结算。
+
+生效范围是使用原版可见度来判断距离的敌对怪物。一般的原版目标检查保留两格的距离下限，所以 `-100` 仍可能在近处被发现。视线、AI 候选搜索范围、已锁定目标和自定义寻敌逻辑仍由怪物决定。
+
+## 生物仇恨
+
+在注册饰品时可以叠加下面的佩戴效果。示例需要已定义并分配的 `ward_ring` 槽位。
+
+```js
+StartupEvents.registry('item', event => {
+  event.create('kubejs:provocation_ring', 'kubecurios:curio')
+    .slot('ward_ring')
+    .provokeNeutralMobs(12)
+
+  event.create('kubejs:truce_ring', 'kubecurios:curio')
+    .slot('ward_ring')
+    .ignoreHostileMob('minecraft:zombie')
+    .ignoreHostileMob('#minecraft:skeletons')
+})
+```
+
+- `provokeNeutralMobs` 接受 `0–128` 格的半径。每 10 个佩戴者 tick 扫描一次，以实体间的实际距离判断。多个启用功能格提供该效果时取最大半径。已驯服的生物和正在攻击其他目标的生物会被跳过。走出范围或卸下饰品会停止施加激怒，已有怒气和攻击目标由原版 AI 继续处理。
+- `ignoreHostileMob` 合并所有启用功能格的类型与标签规则。排除作用于沿用原版可见度战斗判定的主动寻敌。已有攻击目标、怒气、受击反击和脚本显式设置的仇恨仍可生效。使用独立寻敌逻辑的 AI 可能继续主动选中佩戴者。
+- 两种效果均生成工具提示，可用 `.hideAttribute()` 隐藏。
+
+需要在事件中一次性修改指定生物时，可在服务端脚本调用全局 `CuriosUtils.setAggro(mob, target)` 和 `CuriosUtils.clearAggro(mob, target)`。在命名效果回调中也能调用 `ctx.setAggro(mob, target)` 和 `ctx.clearAggro(mob, target)`。例如，在 `onHurt(ctx)` 里调用 `ctx.clearAggro(ctx.attacker(), ctx.entity())`，尝试清掉攻击者对佩戴者的仇恨。
+
+`mob` 是要修改的生物，`target` 是目标实体。调用须在服务端主线程，且两者处于同一维度。`setAggro` 在目标设置成功时返回 `true`。`clearAggro` 在清除至少一项匹配的目标或怒气状态时返回 `true`，对其他实体的仇恨会保留。清除后，生物仍可通过正常寻敌重新选中该目标。向回调方法传入空目标、在回调结束后调用或跨维度调用都会返回 `false`。
+
+## 主动技能
+
+进入游戏后按 **V** 激活饰品技能。可在「选项 → 控制 → 按键绑定 → KubeCurios」修改按键。每次按下会检查所有启用的功能格，同款物品只激活一次，不同物品各自结算冷却。
+
+```js
+StartupEvents.registry('item', event => {
+  event.create('kubejs:veil_ring', 'kubecurios:curio')
+    .slot('ward_ring')
+    .hostileDetectionRangePercent(-40)
+    .onActiveCommand('effect give @s minecraft:invisibility 5 0 true', 200)
+})
+```
+
+`onActiveCommand` 在服务端以佩戴者为执行者、在其当前位置运行。使用命名效果时，可在 `CurioScripts.define` 中写 `onActivate(ctx)`，并用 `.activeSkillCooldown(200)` 设置冷却。同一件饰品同时声明命令与回调时，两者共用一次冷却，先运行命令。冷却从开始激活时计时，摘下重戴不会刷新。活着且处于非旁观模式的玩家可以激活技能。
+
+察觉距离和主动技能的提示会随物品显示。`.hideAttribute()` 可隐藏这些自动提示，手写说明会保留。
+
 ## 命名脚本效果
 
 在 `kubejs/startup_scripts/` 的文件顶层注册效果，物品 Builder 用 `.script(id)` 引用它。ID 使用完整的 `namespace:path`。定义与物品注册可以分开写，启动文件排序不影响绑定。每种物品可绑定一个效果，不同物品可以共用同一份定义。重启后应用脚本改动。
@@ -153,6 +206,7 @@ StartupEvents.registry('item', event => {
 | `onHit` | 归属于佩戴者的攻击使其他生物损失生命后调用，包括有明确射手的投射物及致命命中。 |
 | `equipmentModifiers` | 每 5 个实体 tick 刷新。返回 `CurioEffects.armor(amount)`、`CurioEffects.attribute(id, amount, operation)`、声明数组或空值。空值清除该脚本的临时属性。 |
 | `onTick` | 每 20 个实体 tick 调用，可用于定期效果。 |
+| `onActivate` | 玩家按主动技能键且饰品冷却就绪时执行。可返回 `CurioEffects.damageDurability(...)` 请求扣耐久。 |
 
 `ctx.entity()` 和 `ctx.itemId()` 分别返回佩戴者和完整物品 ID。战斗回调还可以调用 `ctx.attacker()`、`ctx.target()`、`ctx.damageSource()` 和 `ctx.damage()`。无生物归属时 `ctx.attacker()` 为 `null`。结算前回调读取同一次事件进入该阶段时的伤害，结算后回调读取实际生命伤害。脚本倍率在内置倍率之后相乘。
 
@@ -174,7 +228,7 @@ StartupEvents.registry('item', event => {
 
 同款饰品选用槽位 ID 和格索引最靠前的启用功能格作为来源。玩家统计直接使用 KubeJS，例如 `ctx.entity().stats.getJumps()` 或 `ctx.entity().stats.getItemsPickedUp('minecraft:amethyst_shard')`，调用前确认佩戴者是服务端玩家。
 
-`.maxDamage(128)` 可让饰品拥有耐久。`onTick`、`onHit` 和 `onHurt` 可以返回 `CurioEffects.damageDurability(1)`，在回调结束后请求原版耐久结算。消耗只作用于仍在来源格、且仍启用的原物品栈；附魔减耗和破碎按原版规则处理。附魔允许列表、附魔台和铁砧的适配不在这一轮。
+`.maxDamage(128)` 可让饰品拥有耐久。`onTick`、`onHit`、`onHurt` 和 `onActivate` 可以返回 `CurioEffects.damageDurability(1)`，在回调结束后请求原版耐久结算。消耗只作用于仍在来源格、且仍启用的原物品栈，附魔减耗和破碎按原版规则处理。附魔允许列表、附魔台和铁砧的适配仍待实现。
 
 **有耐久不等于自动扣耐久。** 要每 20 个实体 tick 请求扣 1 点，在 `onTick` 返回 `CurioEffects.damageDurability(1)`；想在造成实际生命伤害时扣损，就在 `onHit` 返回。只读 `ctx.equippedTicks()` 或 `ctx.remainingDurability()` 不会扣损。创造模式按原版规则免扣耐久。
 
@@ -185,5 +239,6 @@ StartupEvents.registry('item', event => {
 | `CuriosWhitelist.allow(slotId, itemId)` | 在启动脚本中把已有物品加入槽位白名单。第二参数使用完整物品 ID。 |
 | `CuriosUtils.isEquipped(entity, slotId)` | 指定槽位只要有一个启用的功能格装备着物品，就返回 `true`。空槽、缺少该槽位或仅外观格有物品时返回 `false`。 |
 | `CuriosUtils.itemId(stack)` | 从 Java 物品注册表读取完整 ID。空栈或未注册物品返回 `null`。 |
+| `CuriosUtils.setAggro(mob, target)` / `CuriosUtils.clearAggro(mob, target)` | 对指定生物一次性设置或清除目标仇恨。见[生物仇恨](#生物仇恨)。 |
 
 `slotId` 可以直接传入字符串，`CurioSlot` 类型转换已由插件处理。脚本需要读取物品 ID 时，优先用 `ctx.itemId()` 或 `CuriosUtils.itemId(stack)`，避免 Rhino 中的 `stack.id` 取值差异。

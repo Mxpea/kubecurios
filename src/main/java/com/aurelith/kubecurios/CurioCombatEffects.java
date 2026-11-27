@@ -152,8 +152,12 @@ record CurioCombatEffects(@Nullable HurtTrigger hurtTrigger,
     private static Component damageLine(String category, double percent, boolean penalty, Object... prefix) {
         Object[] arguments = new Object[prefix.length + 1];
         System.arraycopy(prefix, 0, arguments, 0, prefix.length);
-        arguments[prefix.length] = BigDecimal.valueOf(Math.abs(percent)).stripTrailingZeros().toPlainString() + "%";
+        arguments[prefix.length] = formatPercent(percent);
         return Component.translatable(TOOLTIP + category + (percent > 0 ? ".increase" : ".decrease"), arguments)
                 .withStyle(penalty ? ChatFormatting.RED : ChatFormatting.BLUE);
+    }
+
+    static String formatPercent(double percent) {
+        return BigDecimal.valueOf(Math.abs(percent)).stripTrailingZeros().toPlainString() + "%";
     }
 }

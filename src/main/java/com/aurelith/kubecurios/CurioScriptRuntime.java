@@ -15,6 +15,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
@@ -36,6 +37,7 @@ final class CurioScriptRuntime {
         final Set<Diagnostic> logged = new HashSet<>();
         final Set<ActiveCall> active = new HashSet<>();
         final Map<LivingEntity, Map<ModifierKey, AttributeModifier>> applied = new IdentityHashMap<>();
+        final Map<LivingEntity, Integer> lastActivation = new IdentityHashMap<>();
     }
 
     static double multiplyDamage(double multiplier, CurioScripts.Hook hook, LivingEntity wearer, Damage damage,
@@ -60,7 +62,15 @@ final class CurioScriptRuntime {
         new TreeMap<>(equipped).forEach((item, curio) -> runAction(hook, wearer, item, curio, damage));
     }
 
-    private static void runAction(CurioScripts.Hook hook, LivingEntity wearer, String item,
+    static boolean beginActivation(ServerPlayer player) {
+        var server = player.level().getServer();
+        var state = SERVERS.computeIfAbsent(server, ignored -> new ServerState());
+        int tick = server.getTickCount();
+        Integer previous = state.lastActivation.put(player, tick);
+        return previous == null || previous != tick;
+    }
+
+    static void runAction(CurioScripts.Hook hook, LivingEntity wearer, String item,
                                   CurioEquipment.Equipped curio, @Nullable Damage damage) {
         invoke(hook, wearer, item, curio, damage, result -> {
             // Non-cost return values were previously ignored; keep existing callbacks compatible.
@@ -235,6 +245,7 @@ final class CurioScriptRuntime {
     private static void clear(MinecraftServer server, LivingEntity wearer) {
         var state = SERVERS.get(server);
         if (state != null) {
+            state.lastActivation.remove(wearer);
             var removed = state.applied.remove(wearer);
             if (removed != null) {
                 removeModifiers(removed);

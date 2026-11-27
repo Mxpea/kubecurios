@@ -121,6 +121,25 @@ CurioScripts.define('kubecurios_smoke:charged', {
   }
 })
 
+CurioScripts.define('kubecurios_smoke:aggro', {
+  onHit(ctx) {
+    const wearer = ctx.entity()
+    const changed = wearer.entityTags().contains('kc_clear_aggro')
+      ? ctx.clearAggro(ctx.target(), wearer)
+      : ctx.setAggro(ctx.target(), wearer)
+    wearer.getPersistentData().putBoolean('kc_aggro_changed', changed)
+  }
+})
+
+CurioScripts.define('kubecurios_smoke:activate', {
+  onActivate(ctx) {
+    if (ctx.itemId() !== 'kubecurios_smoke:shadow_ring') throw new Error('Wrong active skill item')
+    const data = ctx.entity().getPersistentData()
+    data.putInt('kc_active_calls', data.getIntOr('kc_active_calls', 0) + 1)
+    return CurioEffects.damageDurability(1)
+  }
+})
+
 expectDefinitionError('Duplicate Curio script definition', () => CurioScripts.define('kubecurios_smoke:blood', { onTick() {} }))
 expectDefinitionError('namespace:path', () => CurioScripts.define('unqualified', { onTick() {} }))
 expectDefinitionError('Unknown Curio script callback', () => CurioScripts.define('kubecurios_smoke:bad', { nope() {} }))

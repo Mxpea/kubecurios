@@ -14,6 +14,7 @@ public class KubeCurios {
 
     public KubeCurios(IEventBus modBus) {
         CurioWearTime.register(modBus);
+        modBus.addListener(CurioActiveSkill::registerPayload);
         NeoForge.EVENT_BUS.addListener(this::validateSlots);
         NeoForge.EVENT_BUS.addListener(CurioCombatEffects::modifyDamage);
         NeoForge.EVENT_BUS.addListener(CurioCombatEffects::onHurt);

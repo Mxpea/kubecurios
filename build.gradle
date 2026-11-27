@@ -161,6 +161,9 @@ tasks.named('runAttributeSmoke').configure {
         def text = log.isFile() ? log.getText('UTF-8') : ''
         def expectedLogLines = [
                 '[KubeCurios equipment] PASS: source slots, tags, cumulative equipped time and save/load, durability and enchantment',
+                '[KubeCurios skill] PASS: hostile detection, active skill sources and cooldowns',
+                '[KubeCurios aggro] PASS: Goal targeting, native anger, Brain memories and targeted clearing',
+                '[KubeCurios aggro] PASS: passive targeting exclusions, retaliation and provocation radius',
                 '[KubeCurios script] PASS: invalid definitions rejected',
                 '[KubeCurios script] PASS: combat, equipment, command results and nested execution',
                 "Curio 'kubecurios_smoke:missing_script' references undefined script 'kubecurios_smoke:undefined'",

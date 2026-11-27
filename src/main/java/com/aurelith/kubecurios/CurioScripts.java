@@ -16,7 +16,7 @@ import net.minecraft.resources.Identifier;
 final class CurioScripts {
     enum Hook {
         OUTGOING("modifyOutgoingDamage"), INCOMING("modifyIncomingDamage"),
-        HURT("onHurt"), HIT("onHit"), MODIFIERS("equipmentModifiers"), TICK("onTick");
+        HURT("onHurt"), HIT("onHit"), MODIFIERS("equipmentModifiers"), TICK("onTick"), ACTIVATE("onActivate");
 
         final String name;
 
